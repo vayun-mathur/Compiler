@@ -3,8 +3,10 @@
 #include <queue>
 #include "tokenize.h"
 
+void initAST();
+
 enum class LineType {
-	Return
+	Return, Expression
 };
 enum class ExpressionType {
 	BinaryOperator, ConstantInt
@@ -57,6 +59,13 @@ struct Expression : ASTNode {
 	ExpressionType type;
 	Expression(ExpressionType type, int return_type) : type(type), return_type(return_type) {
 	}
+};
+
+struct ExpressionLine : LineOfCode {
+	Expression* exp;
+	ExpressionLine(Expression* exp) : LineOfCode(LineType::Expression), exp(exp) {
+	}
+	virtual void generateAssembly(assembly& ass) override;
 };
 
 struct Function : ASTNode {

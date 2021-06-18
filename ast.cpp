@@ -13,11 +13,11 @@ token check_token(std::queue<token>& tokens, token_type type) {
 
 // <term> = INT_VALUE { [ + - ] INT_VALUE }
 // <exp> = <term> { [ * / ] <term> }
-// <line> = RETURN_KEYWORD <exp> SEMICOLON
+// <line> = RETURN_KEYWORD <exp> SEMICOLON | <exp> SEMICOLON
 // <function> = INT_KEYWORD NAME OPEN_PARENTHESES CLOSE_PARENTHESES OPEN_BRACES { <line> } CLOSE_BRACES
 // <app> = { <function> }
 
-constexpr BinaryOperator* create_binary_operator(Expression* exp1, Expression* exp2, binary_operator op) {
+inline BinaryOperator* create_binary_operator(Expression* exp1, Expression* exp2, binary_operator op) {
 	return new BinaryOperator(op, exp1, exp2, binary_operator_result_type[{exp1->return_type, op, exp2->return_type}]);
 }
 
@@ -57,10 +57,18 @@ Expression* compile_exp(std::queue<token>& tokens) {
 }
 
 LineOfCode* compile_line(std::queue<token>& tokens) {
-	check_token(tokens, RETURN_KEYWORD);
-	Return* r = new Return(compile_exp(tokens));
-	check_token(tokens, SEMICOLON);
-	return r;
+	token t = tokens.front();
+	if (t.type == RETURN_KEYWORD) {
+		check_token(tokens, RETURN_KEYWORD);
+		Return* r = new Return(compile_exp(tokens));
+		check_token(tokens, SEMICOLON);
+		return r;
+	}
+	else {
+		Expression* e = compile_exp(tokens);
+		check_token(tokens, SEMICOLON);
+		return new ExpressionLine(e);
+	}
 }
 
 Function* compile_function(std::queue<token>& tokens)
@@ -121,15 +129,15 @@ void initAST() {
 
 	binary_operator_result_type[{DataType::INT, binary_operator::multiply, DataType::INT }] = DataType::INT;
 	binary_operator_assembly[{DataType::INT, binary_operator::multiply, DataType::INT }] =
-		assembly({ "\timull %eax, %ecx" });
+		assembly({ "\timull %ecx, %eax" });
 
 	binary_operator_result_type[{DataType::INT, binary_operator::divide, DataType::INT }] = DataType::INT;
 	binary_operator_assembly[{DataType::INT, binary_operator::divide, DataType::INT }] =
-		assembly({ "\tidivl %ecx, %eax" });
+		assembly({ "\tmovl $0, %edx", "\tidivl %ecx" });
 
 	binary_operator_result_type[{DataType::INT, binary_operator::mod, DataType::INT }] = DataType::INT;
 	binary_operator_assembly[{DataType::INT, binary_operator::mod, DataType::INT }] =
-		assembly({ "\tidivl %ecx, %eax", "\tmovl %edx, %eax" });
+		assembly({ "\tmovl $0, %edx", "\tidivl %ecx", "\tmovl %edx, %eax" });
 }
 
 void BinaryOperator::generateAssembly(assembly& ass)
@@ -144,4 +152,9 @@ void BinaryOperator::generateAssembly(assembly& ass)
 void ConstantInt::generateAssembly(assembly& ass)
 {
 	ass.add("\tmovl $" + std::to_string(val) + ", %eax");
+}
+
+void ExpressionLine::generateAssembly(assembly& ass)
+{
+	exp->generateAssembly(ass);
 }

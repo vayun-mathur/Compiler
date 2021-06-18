@@ -13,6 +13,8 @@ std::string slurp(std::ifstream& in) {
 }
 
 int main(int argc, char* argv[]) {
+	initAST();
+
 	std::ifstream openfile = std::ifstream(argv[1]);
 	std::string s = slurp(openfile);
 	std::queue<token> token_queue;
