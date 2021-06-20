@@ -6,10 +6,10 @@
 void initAST();
 
 enum class LineType {
-	Return, Expression
+	Return, Expression, VariableDeclaration
 };
 enum class ExpressionType {
-	BinaryOperator, ConstantInt
+	BinaryOperator, ConstantInt, VariableRef
 };
 
 class DataType {
@@ -68,6 +68,17 @@ struct ExpressionLine : LineOfCode {
 	virtual void generateAssembly(assembly& ass) override;
 };
 
+struct VariableDeclarationLine : LineOfCode {
+	int var_type;
+	Expression* init_exp;
+	std::string name;
+	VariableDeclarationLine(Expression* init_exp, int var_type, std::string name) : LineOfCode(LineType::VariableDeclaration),
+		init_exp(init_exp), var_type(var_type), name(name) {
+
+	}
+	virtual void generateAssembly(assembly& ass) override;
+};
+
 struct Function : ASTNode {
 	std::string name;
 	std::vector<LineOfCode*> lines;
@@ -93,6 +104,14 @@ struct BinaryOperator : Expression {
 	BinaryOperator(binary_operator op, Expression* left, Expression* right, int return_type) : Expression(ExpressionType::BinaryOperator, return_type), op(op), left(left), right(right) { };
 	Expression* left, * right;
 	binary_operator op;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct VariableRef : Expression {
+	VariableRef(std::string name, int var_type) : Expression(ExpressionType::VariableRef, DataType::INT), 
+		name(name), var_type(var_type) { };
+	std::string name;
+	int var_type;
 	virtual void generateAssembly(assembly& ass) override;
 };
 

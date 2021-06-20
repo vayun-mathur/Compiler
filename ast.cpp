@@ -11,9 +11,10 @@ token check_token(std::queue<token>& tokens, token_type type) {
 	return t;
 }
 
-// <term> = INT_VALUE { [ + - ] INT_VALUE }
+// <val> = INT_VALUE | NAME
+// <term> = <val> { [ + - ] <val> }
 // <exp> = <term> { [ * / ] <term> }
-// <line> = RETURN_KEYWORD <exp> SEMICOLON | <exp> SEMICOLON
+// <line> = RETURN_KEYWORD <exp> SEMICOLON | <exp> SEMICOLON | INT_KEYWORD NAME (EQUAL_SIGN <exp>) SEMICOLON
 // <function> = INT_KEYWORD NAME OPEN_PARENTHESES CLOSE_PARENTHESES OPEN_BRACES { <line> } CLOSE_BRACES
 // <app> = { <function> }
 
@@ -21,12 +22,21 @@ inline BinaryOperator* create_binary_operator(Expression* exp1, Expression* exp2
 	return new BinaryOperator(op, exp1, exp2, binary_operator_result_type[{exp1->return_type, op, exp2->return_type}]);
 }
 
+Expression* compile_val(std::queue<token>& tokens) {
+	if (tokens.front().type == INT_VALUE) {
+		return new ConstantInt(stoi(check_token(tokens, INT_VALUE).value));
+	}
+	else {
+		return new VariableRef(check_token(tokens, NAME).value, DataType::INT);
+	}
+}
+
 Expression* compile_term(std::queue<token>& tokens) {
-	Expression* exp = new ConstantInt(stoi(check_token(tokens, INT_VALUE).value));
+	Expression* exp = compile_val(tokens); 
 	while (tokens.front().type == ASTERISK || tokens.front().type == SLASH) {
 		token t = tokens.front();
 		tokens.pop();
-		Expression* exp2 = new ConstantInt(stoi(check_token(tokens, INT_VALUE).value));
+		Expression* exp2 = compile_val(tokens);
 		if (t.type == ASTERISK) {
 			exp = create_binary_operator(exp, exp2, multiply);
 		}
@@ -64,7 +74,17 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 		check_token(tokens, SEMICOLON);
 		return r;
 	}
-	else {
+	else if (t.type == INT_KEYWORD) {
+		check_token(tokens, INT_KEYWORD);
+		std::string name = check_token(tokens, NAME).value;
+		Expression* exp = nullptr;
+		if (tokens.front().type == EQUAL_SIGN) {
+			check_token(tokens, EQUAL_SIGN);
+			exp = compile_exp(tokens);
+		}
+		check_token(tokens, SEMICOLON);
+		return new VariableDeclarationLine(exp, DataType::INT, name);
+	} else {
 		Expression* e = compile_exp(tokens);
 		check_token(tokens, SEMICOLON);
 		return new ExpressionLine(e);
@@ -96,6 +116,19 @@ Application* compile_application(std::queue<token>& tokens)
 
 
 
+
+
+
+
+struct variable {
+	std::string name;
+	int location;
+};
+
+std::map<std::string, variable> variables;
+int current_variable_location = -8;
+
+
 void Application::generateAssembly(assembly& ass)
 {
 	for (Function* func : functions) {
@@ -107,6 +140,8 @@ void Function::generateAssembly(assembly& ass)
 {
 	ass.add(".globl	main");
 	ass.add(name + ":");
+	ass.add("\tpush %rbp");
+	ass.add("\tmovq %rsp, %rbp");
 	for (LineOfCode* line : lines) {
 		line->generateAssembly(ass);
 	}
@@ -115,6 +150,8 @@ void Function::generateAssembly(assembly& ass)
 void Return::generateAssembly(assembly& ass)
 {
 	expr->generateAssembly(ass);
+	ass.add("\tmovq %rbp, %rsp");
+	ass.add("\tpop %rbp");
 	ass.add("\tret");
 }
 
@@ -157,4 +194,22 @@ void ConstantInt::generateAssembly(assembly& ass)
 void ExpressionLine::generateAssembly(assembly& ass)
 {
 	exp->generateAssembly(ass);
+}
+
+void VariableDeclarationLine::generateAssembly(assembly& ass)
+{
+	if (init_exp == nullptr) {
+		ass.add("\tmovl $0, %eax");
+	}
+	else {
+		init_exp->generateAssembly(ass);
+	}
+	variables.insert({ name, {name, current_variable_location} });
+	current_variable_location -= 8;
+	ass.add("\tpush %rax");
+}
+
+void VariableRef::generateAssembly(assembly& ass)
+{
+	ass.add("\tmovl " + std::to_string(variables[name].location) + "(%rbp), %eax");
 }

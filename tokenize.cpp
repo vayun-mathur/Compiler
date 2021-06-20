@@ -22,6 +22,7 @@ token_data token_regex[] = {
     {ASTERISK, R"(\*)"},
     {SLASH, R"(\/)"},
     {MODULUS, R"(%)"},
+    {EQUAL_SIGN, R"(=)"},
     {OPEN_PARENTHESES, R"(\()"},
     {CLOSE_PARENTHESES, R"(\))"},
     {OPEN_BRACES, R"(\{)"},
