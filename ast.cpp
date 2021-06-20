@@ -1,11 +1,11 @@
 #include "ast.h"
 #include <map>
 
-std::map<std::tuple<int, binary_operator, int>, assembly > binary_operator_assembly;
-std::map<std::tuple<int, binary_operator, int>, int > binary_operator_result_type;
+std::map<std::tuple<DataType, binary_operator, DataType>, assembly > binary_operator_assembly;
+std::map<std::tuple<DataType, binary_operator, DataType>, DataType > binary_operator_result_type;
 
-std::map<std::tuple<int, unary_operator>, assembly > unary_operator_assembly;
-std::map<std::tuple<int, unary_operator>, int > unary_operator_result_type;
+std::map<std::tuple<DataType, unary_operator>, assembly > unary_operator_assembly;
+std::map<std::tuple<DataType, unary_operator>, DataType > unary_operator_result_type;
 
 token check_token(std::queue<token>& tokens, token_type type) {
 	token t = tokens.front();
@@ -21,6 +21,9 @@ inline BinaryOperator* create_binary_operator(Expression* exp1, Expression* exp2
 inline UnaryOperator* create_unary_operator(Expression* exp1, unary_operator op) {
 	return new UnaryOperator(op, exp1, unary_operator_result_type[{exp1->return_type, op}]);
 }
+
+// the functions with names compile_ followed by a number are named by the order of precedence of their operators
+// according to https://en.cppreference.com/w/cpp/language/operator_precedence
 
 Expression* compile_0(std::queue<token>& tokens) {
 	if (tokens.front().type == INT_VALUE) {
@@ -147,11 +150,24 @@ Expression* compile_15(std::queue<token>& tokens) {
 	return exp;
 }
 
+Expression* compile_16(std::queue<token>& tokens) {
+	Expression* exp = compile_15(tokens);
+	while (tokens.front().type == EQUAL_SIGN) {
+		token t = tokens.front();
+		tokens.pop();
+		if (t.type == EQUAL_SIGN) {
+			Expression* exp2 = compile_15(tokens);
+			exp = create_binary_operator(exp, exp2, assignment);
+		}
+	}
+	return exp;
+}
+
 LineOfCode* compile_line(std::queue<token>& tokens) {
 	token t = tokens.front();
 	if (t.type == RETURN_KEYWORD) {
 		check_token(tokens, RETURN_KEYWORD);
-		Return* r = new Return(compile_15(tokens));
+		Return* r = new Return(compile_16(tokens));
 		check_token(tokens, SEMICOLON);
 		return r;
 	}
@@ -161,12 +177,12 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 		Expression* exp = nullptr;
 		if (tokens.front().type == EQUAL_SIGN) {
 			check_token(tokens, EQUAL_SIGN);
-			exp = compile_15(tokens);
+			exp = compile_16(tokens);
 		}
 		check_token(tokens, SEMICOLON);
 		return new VariableDeclarationLine(exp, DataType::INT, name);
 	} else {
-		Expression* e = compile_15(tokens);
+		Expression* e = compile_16(tokens);
 		check_token(tokens, SEMICOLON);
 		return new ExpressionLine(e);
 	}
@@ -231,6 +247,9 @@ void Function::generateAssembly(assembly& ass)
 void Return::generateAssembly(assembly& ass)
 {
 	expr->generateAssembly(ass);
+	if (expr->return_type.reference) {
+		ass.add("\tmovl (%eax), %eax");
+	}
 	ass.add("\tmovq %rbp, %rsp");
 	ass.add("\tpop %rbp");
 	ass.add("\tret");
@@ -281,6 +300,10 @@ void initAST() {
 	binary_operator_assembly[{DataType::INT, greater_equal, DataType::INT }] =
 		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetge %al" });
 
+	binary_operator_result_type[{DataType::INT_REF, assignment, DataType::INT }] = DataType::INT_REF;
+	binary_operator_assembly[{DataType::INT_REF, assignment, DataType::INT }] =
+		assembly({ "\tmovl %ecx, (%eax)" });
+
 	unary_operator_result_type[{DataType::INT, negation }] = DataType::INT;
 	unary_operator_assembly[{DataType::INT, negation }] =
 		assembly({ "\tneg %eax" });
@@ -327,7 +350,17 @@ void BinaryOperator::generateAssembly(assembly& ass)
 	ass.add("\tpush %rax");
 	left->generateAssembly(ass);
 	ass.add("\tpop %rcx");
-	ass.add(binary_operator_assembly[{left->return_type, op, right->return_type}]);
+	DataType l = left->return_type;
+	DataType r = right->return_type;
+	if (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && r.reference) {
+		r.reference = false;
+		ass.add("\tmovl (%ecx), %ecx");
+	}
+	if (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && l.reference) {
+		l.reference = false;
+		ass.add("\tmovl (%eax), %eax");
+	}
+	ass.add(binary_operator_assembly[{l, op, r}]);
 }
 
 void UnaryOperator::generateAssembly(assembly& ass)
@@ -362,5 +395,5 @@ void VariableDeclarationLine::generateAssembly(assembly& ass)
 
 void VariableRef::generateAssembly(assembly& ass)
 {
-	ass.add("\tmovl " + std::to_string(variables[name].location) + "(%rbp), %eax");
+	ass.add("\tleal " + std::to_string(variables[name].location) + "(%rbp), %eax");
 }

@@ -14,8 +14,38 @@ enum class ExpressionType {
 
 class DataType {
 public:
-	static const int INT = 0;
+	static const DataType INT;
+	static const DataType INT_REF;
+	int id;
+	int pointers;
+	bool reference;
+	DataType()
+		: id(0), pointers(0), reference(false) {
+
+	}
+	DataType(const DataType& other)
+		: id(other.id), pointers(other.pointers), reference(other.reference) {
+
+	}
+	DataType(int id, int pointers, bool reference)
+	: id(id), pointers(pointers), reference(reference) {
+
+	}
+	bool operator==(const DataType& other) {
+		return id == other.id && pointers == other.pointers && reference == other.reference;
+	}
+	bool operator<(const DataType& other) const {
+		if(id < other.id) return true;
+		if (id > other.id) return false;
+		if (pointers < other.pointers) return true;
+		if (pointers > other.pointers) return false;
+		if (reference < other.reference) return true;
+		return false;
+	}
 };
+
+inline const DataType DataType::INT = DataType(0, 0, false);
+inline const DataType DataType::INT_REF = DataType(0, 0, true);
 
 struct assembly {
 	std::vector<std::string> lines;
@@ -55,9 +85,9 @@ struct LineOfCode : ASTNode {
 };
 
 struct Expression : ASTNode {
-	int return_type;
+	DataType return_type;
 	ExpressionType type;
-	Expression(ExpressionType type, int return_type) : type(type), return_type(return_type) {
+	Expression(ExpressionType type, DataType return_type) : type(type), return_type(return_type) {
 	}
 };
 
@@ -69,10 +99,10 @@ struct ExpressionLine : LineOfCode {
 };
 
 struct VariableDeclarationLine : LineOfCode {
-	int var_type;
+	DataType var_type;
 	Expression* init_exp;
 	std::string name;
-	VariableDeclarationLine(Expression* init_exp, int var_type, std::string name) : LineOfCode(LineType::VariableDeclaration),
+	VariableDeclarationLine(Expression* init_exp, DataType var_type, std::string name) : LineOfCode(LineType::VariableDeclaration),
 		init_exp(init_exp), var_type(var_type), name(name) {
 
 	}
@@ -99,11 +129,12 @@ struct Return : LineOfCode {
 enum binary_operator {
 	add, subtract, multiply, divide, mod,
 	logical_and, logical_or,
-	equal, not_equal, less, greater, less_equal, greater_equal
+	equal, not_equal, less, greater, less_equal, greater_equal,
+	assignment
 };
 
 struct BinaryOperator : Expression {
-	BinaryOperator(binary_operator op, Expression* left, Expression* right, int return_type) : Expression(ExpressionType::BinaryOperator, return_type), op(op), left(left), right(right) { };
+	BinaryOperator(binary_operator op, Expression* left, Expression* right, DataType return_type) : Expression(ExpressionType::BinaryOperator, return_type), op(op), left(left), right(right) { };
 	Expression* left, * right;
 	binary_operator op;
 	virtual void generateAssembly(assembly& ass) override;
@@ -114,15 +145,17 @@ enum unary_operator {
 };
 
 struct UnaryOperator : Expression {
-	UnaryOperator(unary_operator op, Expression* left, int return_type) : Expression(ExpressionType::UnaryOperator, return_type), op(op), left(left) { };
+	UnaryOperator(unary_operator op, Expression* left, DataType return_type) : Expression(ExpressionType::UnaryOperator, return_type), op(op), left(left) { };
 	Expression* left;
 	unary_operator op;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
 struct VariableRef : Expression {
-	VariableRef(std::string name, int var_type) : Expression(ExpressionType::VariableRef, var_type),
-		name(name) { };
+	VariableRef(std::string name, DataType var_type) : Expression(ExpressionType::VariableRef, var_type),
+		name(name) {
+		return_type.reference = true;
+	};
 	std::string name;
 	virtual void generateAssembly(assembly& ass) override;
 };
