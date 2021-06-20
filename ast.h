@@ -9,7 +9,7 @@ enum class LineType {
 	Return, Expression, VariableDeclaration
 };
 enum class ExpressionType {
-	BinaryOperator, ConstantInt, VariableRef
+	BinaryOperator, ConstantInt, VariableRef, UnaryOperator
 };
 
 class DataType {
@@ -97,7 +97,9 @@ struct Return : LineOfCode {
 };
 
 enum binary_operator {
-	add, subtract, multiply, divide, mod
+	add, subtract, multiply, divide, mod,
+	logical_and, logical_or,
+	equal, not_equal, less, greater, less_equal, greater_equal
 };
 
 struct BinaryOperator : Expression {
@@ -107,11 +109,21 @@ struct BinaryOperator : Expression {
 	virtual void generateAssembly(assembly& ass) override;
 };
 
+enum unary_operator {
+	negation, bitwise_complement, logical_negation
+};
+
+struct UnaryOperator : Expression {
+	UnaryOperator(unary_operator op, Expression* left, int return_type) : Expression(ExpressionType::UnaryOperator, return_type), op(op), left(left) { };
+	Expression* left;
+	unary_operator op;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
 struct VariableRef : Expression {
-	VariableRef(std::string name, int var_type) : Expression(ExpressionType::VariableRef, DataType::INT), 
-		name(name), var_type(var_type) { };
+	VariableRef(std::string name, int var_type) : Expression(ExpressionType::VariableRef, var_type),
+		name(name) { };
 	std::string name;
-	int var_type;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
