@@ -19,6 +19,12 @@ token_data token_regex[] = {
     {RETURN_KEYWORD, R"(return)"},
     {SEMICOLON, R"(;)"},
 
+    {FOR_KEYWORD, R"(for)"},
+    {WHILE_KEYWORD, R"(while)"},
+    {DO_KEYWORD, R"(do)"},
+    {BREAK_KEYWORD, R"(break)"},
+    {CONTINUE_KEYWORD, R"(continue)"},
+
     {IF_KEYWORD, R"(if)"},
     {ELSE_KEYWORD, R"(else)"},
     {COLON, R"(:)"},

@@ -6,7 +6,7 @@
 void initAST();
 
 enum class LineType {
-	Return, Expression, VariableDeclaration, If, Block
+	Return, Expression, VariableDeclaration, If, Block, For, While, DoWhile, Break, Continue
 };
 enum class ExpressionType {
 	BinaryOperator, ConstantInt, VariableRef, UnaryOperator, Ternary
@@ -142,6 +142,45 @@ struct IfStatement : LineOfCode {
 	LineOfCode* if_cond, * else_cond;
 	IfStatement(Expression* condition, LineOfCode* if_cond, LineOfCode* else_cond) : LineOfCode(LineType::If), 
 		condition(condition), if_cond(if_cond), else_cond(else_cond) { };
+
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct ForLoop : LineOfCode {
+	BlockItem* initial;
+	Expression* condition;
+	Expression* post;
+	LineOfCode* inner;
+	ForLoop(BlockItem* initial, Expression* condition, Expression* post, LineOfCode* inner) : LineOfCode(LineType::For),
+		initial(initial), condition(condition), post(post), inner(inner) { };
+
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct Break : LineOfCode {
+	Break() : LineOfCode(LineType::Break) {}
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct Continue : LineOfCode {
+	Continue() : LineOfCode(LineType::Continue) {}
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct WhileLoop : LineOfCode {
+	Expression* condition;
+	LineOfCode* inner;
+	WhileLoop(Expression* condition, LineOfCode* inner) : LineOfCode(LineType::While),
+		condition(condition), inner(inner) { };
+
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct DoWhileLoop : LineOfCode {
+	Expression* condition;
+	LineOfCode* inner;
+	DoWhileLoop(Expression* condition, LineOfCode* inner) : LineOfCode(LineType::DoWhile),
+		condition(condition), inner(inner) { };
 
 	virtual void generateAssembly(assembly& ass) override;
 };

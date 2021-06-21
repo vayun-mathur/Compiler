@@ -75,7 +75,7 @@ Expression* compile_3(std::queue<token>& tokens) {
 		Expression* exp = compile_3(tokens);
 		if (t.type == MINUS) {
 			exp = create_unary_operator(exp, negation);
-		} 
+		}
 		else if (t.type == BITWISE_COMPLEMENT) {
 			exp = create_unary_operator(exp, bitwise_complement);
 		}
@@ -355,8 +355,60 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 		}
 		return new IfStatement(cond_exp, if_cond, else_cond);
 	}
+	else if (t.type == FOR_KEYWORD) {
+		check_token(tokens, FOR_KEYWORD);
+		check_token(tokens, OPEN_PARENTHESES);
+		BlockItem* initial = nullptr;
+		if (tokens.front().type == SEMICOLON) {
+			check_token(tokens, SEMICOLON);
+		}
+		else if (tokens.front().type == INT_KEYWORD) {
+			initial = (VariableDeclarationLine*)compile_block_item(tokens);
+		}
+		else {
+			initial = new ExpressionLine(compile_17(tokens));
+			check_token(tokens, SEMICOLON);
+		}
+		Expression* condition = tokens.front().type == SEMICOLON ? nullptr : compile_17(tokens);
+		check_token(tokens, SEMICOLON);
+		Expression* post = tokens.front().type == CLOSE_PARENTHESES ? nullptr : compile_17(tokens);
+		check_token(tokens, CLOSE_PARENTHESES);
+		LineOfCode* inner = compile_line(tokens);
+		return new ForLoop(initial, condition, post, inner);
+	}
+	else if (t.type == WHILE_KEYWORD) {
+		check_token(tokens, WHILE_KEYWORD);
+		check_token(tokens, OPEN_PARENTHESES);
+		Expression* condition = compile_17(tokens);
+		check_token(tokens, CLOSE_PARENTHESES);
+		LineOfCode* inner = compile_line(tokens);
+		return new WhileLoop(condition, inner);
+	}
+	else if (t.type == DO_KEYWORD) {
+		check_token(tokens, DO_KEYWORD);
+		LineOfCode* inner = compile_line(tokens);
+		check_token(tokens, WHILE_KEYWORD);
+		check_token(tokens, OPEN_PARENTHESES);
+		Expression* condition = compile_17(tokens);
+		check_token(tokens, CLOSE_PARENTHESES);
+		check_token(tokens, SEMICOLON);
+		return new DoWhileLoop(condition, inner);
+	}
+	else if (t.type == BREAK_KEYWORD) {
+		check_token(tokens, BREAK_KEYWORD);
+		check_token(tokens, SEMICOLON);
+		return new Break();
+	}
+	else if (t.type == CONTINUE_KEYWORD) {
+		check_token(tokens, CONTINUE_KEYWORD);
+		check_token(tokens, SEMICOLON);
+		return new Continue();
+	}
 	else if (t.type == OPEN_BRACES) {
 		return compile_code_block(tokens);
+	}
+	else if (t.type == SEMICOLON) {
+		return new ExpressionLine(nullptr);
 	}
 	else {
 		Expression* e = compile_17(tokens);
@@ -433,8 +485,8 @@ void CodeBlock::generateAssembly(assembly& ass) {
 	for (BlockItem* line : lines) {
 		line->generateAssembly(ass);
 	}
+	ass.add("\taddq $" + std::to_string(8 * curr_scope->variables.size()) + ", %rsp");
 	curr_scope = curr_scope->parent;
-	ass.add("\tmovq " + std::to_string(curr_scope->current_variable_location+8) + "(%rbp), %rsp");
 }
 
 void Function::generateAssembly(assembly& ass)
@@ -482,17 +534,17 @@ void initAST() {
 		assembly({ "\tmovl $0, %edx", "\tidivl %ecx", "\tmovl %edx, %eax" }));
 
 	addBinaryOperator(DataType::INT, equal, DataType::INT, DataType::INT,
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsete %al" }));
+		assembly({ "\tcmpl %ecx, %eax", "\tmovl $0, %eax", "\tsete %al" }));
 	addBinaryOperator(DataType::INT, not_equal, DataType::INT, DataType::INT,
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetne %al" }));
+		assembly({ "\tcmpl %ecx, %eax", "\tmovl $0, %eax", "\tsetne %al" }));
 	addBinaryOperator(DataType::INT, less, DataType::INT, DataType::INT,
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetl %al" }));
+		assembly({ "\tcmpl %ecx, %eax", "\tmovl $0, %eax", "\tsetl %al" }));
 	addBinaryOperator(DataType::INT, greater, DataType::INT, DataType::INT,
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetg %al" }));
+		assembly({ "\tcmpl %ecx, %eax", "\tmovl $0, %eax", "\tsetg %al" }));
 	addBinaryOperator(DataType::INT, less_equal, DataType::INT, DataType::INT,
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetle %al" }));
+		assembly({ "\tcmpl %ecx, %eax", "\tmovl $0, %eax", "\tsetle %al" }));
 	addBinaryOperator(DataType::INT, greater_equal, DataType::INT, DataType::INT,
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetge %al" }));
+		assembly({ "\tcmpl %ecx, %eax", "\tmovl $0, %eax", "\tsetge %al" }));
 
 	addBinaryOperator(DataType::INT, left_shift, DataType::INT, DataType::INT,
 		assembly({ "\tsall %cl, %eax" }));
@@ -610,7 +662,8 @@ void ConstantInt::generateAssembly(assembly& ass)
 
 void ExpressionLine::generateAssembly(assembly& ass)
 {
-	exp->generateAssembly(ass);
+	if(exp)
+		exp->generateAssembly(ass);
 }
 
 void VariableDeclarationLine::generateAssembly(assembly& ass)
@@ -636,7 +689,7 @@ void VariableRef::generateAssembly(assembly& ass)
 		ass.add("\tleal " + std::to_string(sc->variables[name].location) + "(%rbp), %eax");
 	else
 		; //could not find variable
-		
+
 }
 
 void IfStatement::generateAssembly(assembly& ass)
@@ -649,7 +702,7 @@ void IfStatement::generateAssembly(assembly& ass)
 	if_cond->generateAssembly(ass);
 	ass.add("\tjmp _post_conditional_if_" + std::to_string(if_cl));
 	ass.add("_e3_if_" + std::to_string(if_cl) + ":");
-	if(else_cond) else_cond->generateAssembly(ass);
+	if (else_cond) else_cond->generateAssembly(ass);
 	ass.add("_post_conditional_if_" + std::to_string(if_cl) + ":");
 }
 
@@ -665,4 +718,95 @@ void TernaryExpression::generateAssembly(assembly& ass)
 	ass.add("_e3_" + std::to_string(ternary_cl) + ":");
 	else_cond->generateAssembly(ass);
 	ass.add("_post_conditional_" + std::to_string(ternary_cl) + ":");
+}
+
+struct loop_scope {
+	loop_scope* parent;
+	LineType type;
+	int id;
+};
+
+loop_scope* curr_loop_scope;
+
+void WhileLoop::generateAssembly(assembly& ass) {
+	static int while_clause = 0;
+	int while_cl = while_clause++;
+	curr_loop_scope = new loop_scope{ curr_loop_scope, LineType::While, while_cl };
+
+	ass.add("_while_start_" + std::to_string(while_cl) + ":");
+	condition->generateAssembly(ass);
+	ass.add("\tcmpl $0, %eax");
+	ass.add("\tje _while_end_" + std::to_string(while_cl));
+	inner->generateAssembly(ass);
+	ass.add("\tjmp _while_start_" + std::to_string(while_cl));
+	ass.add("_while_end_" + std::to_string(while_cl) + ":");
+
+	curr_loop_scope = curr_loop_scope->parent;
+}
+
+void DoWhileLoop::generateAssembly(assembly& ass) {
+	static int do_while_clause = 0;
+	int do_while_cl = do_while_clause++;
+	curr_loop_scope = new loop_scope{ curr_loop_scope, LineType::DoWhile, do_while_cl };
+
+	ass.add("_do_while_start_" + std::to_string(do_while_cl) + ":");
+	inner->generateAssembly(ass);
+	condition->generateAssembly(ass);
+	ass.add("\tcmpl $0, %eax");
+	ass.add("\tje _do_while_end_" + std::to_string(do_while_cl));
+	ass.add("\tjmp _do_while_start_" + std::to_string(do_while_cl));
+	ass.add("_do_while_end_" + std::to_string(do_while_cl) + ":");
+
+	curr_loop_scope = curr_loop_scope->parent;
+}
+
+void ForLoop::generateAssembly(assembly& ass) {
+	static int for_clause = 0;
+	int for_cl = for_clause++;
+
+	curr_scope = new scope{ curr_scope, curr_scope->current_variable_location };
+	curr_loop_scope = new loop_scope{ curr_loop_scope, LineType::For, for_cl };
+
+	if (initial) initial->generateAssembly(ass);
+	ass.add("_for_start_" + std::to_string(for_cl) + ":");
+	if (condition) condition->generateAssembly(ass);
+	else ass.add("\tmovl $1, %eax");
+	ass.add("\tcmpl $0, %eax");
+	ass.add("\tje _for_end_" + std::to_string(for_cl));
+	inner->generateAssembly(ass);
+	ass.add("_for_continue_" + std::to_string(for_cl) + ":");
+	if(post) post->generateAssembly(ass);
+	ass.add("\tjmp _for_start_" + std::to_string(for_cl));
+	ass.add("_for_end_" + std::to_string(for_cl) + ":");
+
+	ass.add("\taddq $" + std::to_string(8 * curr_scope->variables.size()) + ", %rsp");
+	curr_scope = curr_scope->parent;
+
+	curr_loop_scope = curr_loop_scope->parent;
+}
+
+void Break::generateAssembly(assembly& ass) {
+	if (!curr_loop_scope) return; // trying to break when there is no loop
+	if (curr_loop_scope->type == LineType::While) {
+		ass.add("\tjmp _while_end_" + std::to_string(curr_loop_scope->id));
+	}
+	if (curr_loop_scope->type == LineType::DoWhile) {
+		ass.add("\tjmp _do_while_end_" + std::to_string(curr_loop_scope->id));
+	}
+	if (curr_loop_scope->type == LineType::For) {
+		ass.add("\tjmp _for_end_" + std::to_string(curr_loop_scope->id));
+	}
+}
+
+void Continue::generateAssembly(assembly& ass) {
+	if (!curr_loop_scope) return; // trying to break when there is no loop
+	if (curr_loop_scope->type == LineType::While) {
+		ass.add("\tjmp _while_start_" + std::to_string(curr_loop_scope->id));
+	}
+	if (curr_loop_scope->type == LineType::DoWhile) {
+		ass.add("\tjmp _do_while_start_" + std::to_string(curr_loop_scope->id));
+	}
+	if (curr_loop_scope->type == LineType::For) {
+		ass.add("\tjmp _for_continue_" + std::to_string(curr_loop_scope->id));
+	}
 }
