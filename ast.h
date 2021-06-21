@@ -146,7 +146,9 @@ struct BinaryOperator : Expression {
 };
 
 enum unary_operator {
-	negation, bitwise_complement, logical_negation
+	negation, bitwise_complement, logical_negation,
+	prefix_increment, prefix_decrement,
+	postfix_increment, postfix_decrement
 };
 
 struct UnaryOperator : Expression {

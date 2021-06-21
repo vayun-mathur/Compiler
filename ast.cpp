@@ -37,18 +37,27 @@ Expression* compile_0(std::queue<token>& tokens) {
 //::
 //compile_1
 
-// _++
-// _--
 // type()
 // type{}
 // a()
 // a[]
 // .
 // ->
-//compile_2
+Expression* compile_2(std::queue<token>& tokens) {
+	Expression* exp = compile_0(tokens);
+	while (tokens.front().type == INCREMENT || tokens.front().type == DECREMENT) {
+		token t = tokens.front();
+		tokens.pop();
+		if (t.type == INCREMENT) {
+			exp = create_unary_operator(exp, postfix_increment);
+		}
+		else {
+			exp = create_unary_operator(exp, postfix_decrement);
+		}
+	}
+	return exp;
+}
 
-// ++_
-// --_
 // +_
 // (type)_
 // *_
@@ -59,15 +68,22 @@ Expression* compile_0(std::queue<token>& tokens) {
 // delete
 // delete[]
 Expression* compile_3(std::queue<token>& tokens) {
-	if (tokens.front().type == MINUS || tokens.front().type == BITWISE_COMPLEMENT || tokens.front().type == EXCLAMATION) {
+	if (tokens.front().type == MINUS || tokens.front().type == BITWISE_COMPLEMENT || tokens.front().type == EXCLAMATION
+		|| tokens.front().type == INCREMENT || tokens.front().type == DECREMENT) {
 		token t = tokens.front();
 		tokens.pop();
 		Expression* exp = compile_3(tokens);
 		if (t.type == MINUS) {
 			exp = create_unary_operator(exp, negation);
-		}
+		} 
 		else if (t.type == BITWISE_COMPLEMENT) {
 			exp = create_unary_operator(exp, bitwise_complement);
+		}
+		else if (t.type == INCREMENT) {
+			exp = create_unary_operator(exp, prefix_increment);
+		}
+		else if (t.type == DECREMENT) {
+			exp = create_unary_operator(exp, prefix_decrement);
 		}
 		else {
 			exp = create_unary_operator(exp, logical_negation);
@@ -75,7 +91,7 @@ Expression* compile_3(std::queue<token>& tokens) {
 		return exp;
 	}
 	else {
-		return compile_0(tokens);
+		return compile_2(tokens);
 	}
 }
 
@@ -84,15 +100,15 @@ Expression* compile_3(std::queue<token>& tokens) {
 //compile_4
 
 Expression* compile_5(std::queue<token>& tokens) {
-	Expression* exp = compile_3(tokens); 
-	while (tokens.front().type == ASTERISK || tokens.front().type == SLASH) {
+	Expression* exp = compile_3(tokens);
+	while (tokens.front().type == ASTERISK || tokens.front().type == SLASH || tokens.front().type == MODULUS) {
 		token t = tokens.front();
 		tokens.pop();
 		Expression* exp2 = compile_3(tokens);
 		if (t.type == ASTERISK) {
 			exp = create_binary_operator(exp, exp2, multiply);
 		}
-		else if (t.type==SLASH){
+		else if (t.type == SLASH) {
 			exp = create_binary_operator(exp, exp2, divide);
 		}
 		else {
@@ -146,10 +162,10 @@ Expression* compile_9(std::queue<token>& tokens) {
 		if (t.type == LESS_THAN) {
 			exp = create_binary_operator(exp, exp2, less);
 		}
-		else if(t.type == LESS_OR_EQUAL_TO) {
+		else if (t.type == LESS_OR_EQUAL_TO) {
 			exp = create_binary_operator(exp, exp2, less_equal);
 		}
-		else if(t.type == GREATER_THAN) {
+		else if (t.type == GREATER_THAN) {
 			exp = create_binary_operator(exp, exp2, greater);
 		}
 		else {
@@ -289,11 +305,20 @@ Expression* compile_16(std::queue<token>& tokens) {
 	return exp;
 }
 
+Expression* compile_17(std::queue<token>& tokens) {
+	Expression* exp = compile_16(tokens);
+	while (tokens.front().type == COMMA) {
+		tokens.pop();
+		exp = compile_16(tokens);
+	}
+	return exp;
+}
+
 LineOfCode* compile_line(std::queue<token>& tokens) {
 	token t = tokens.front();
 	if (t.type == RETURN_KEYWORD) {
 		check_token(tokens, RETURN_KEYWORD);
-		Return* r = new Return(compile_16(tokens));
+		Return* r = new Return(compile_17(tokens));
 		check_token(tokens, SEMICOLON);
 		return r;
 	}
@@ -303,12 +328,13 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 		Expression* exp = nullptr;
 		if (tokens.front().type == EQUAL_SIGN) {
 			check_token(tokens, EQUAL_SIGN);
-			exp = compile_16(tokens);
+			exp = compile_17(tokens);
 		}
 		check_token(tokens, SEMICOLON);
 		return new VariableDeclarationLine(exp, DataType::INT, name);
-	} else {
-		Expression* e = compile_16(tokens);
+	}
+	else {
+		Expression* e = compile_17(tokens);
 		check_token(tokens, SEMICOLON);
 		return new ExpressionLine(e);
 	}
@@ -400,28 +426,28 @@ void addUnaryOperator(DataType type1, unary_operator op, DataType return_type, a
 }
 
 void initAST() {
-	addBinaryOperator(DataType::INT, add, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, add, DataType::INT, DataType::INT,
 		assembly({ "\taddl %ecx, %eax" }));
-	addBinaryOperator(DataType::INT, subtract, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, subtract, DataType::INT, DataType::INT,
 		assembly({ "\tsubl %ecx, %eax" }));
-	addBinaryOperator(DataType::INT, multiply, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, multiply, DataType::INT, DataType::INT,
 		assembly({ "\timull %ecx, %eax" }));
 	addBinaryOperator(DataType::INT, divide, DataType::INT, DataType::INT,
 		assembly({ "\tmovl $0, %edx", "\tidivl %ecx" }));
-	addBinaryOperator(DataType::INT, mod, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, mod, DataType::INT, DataType::INT,
 		assembly({ "\tmovl $0, %edx", "\tidivl %ecx", "\tmovl %edx, %eax" }));
 
 	addBinaryOperator(DataType::INT, equal, DataType::INT, DataType::INT,
 		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsete %al" }));
-	addBinaryOperator(DataType::INT, not_equal, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, not_equal, DataType::INT, DataType::INT,
 		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetne %al" }));
-	addBinaryOperator(DataType::INT, less, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, less, DataType::INT, DataType::INT,
 		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetl %al" }));
-	addBinaryOperator(DataType::INT, greater, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, greater, DataType::INT, DataType::INT,
 		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetg %al" }));
-	addBinaryOperator(DataType::INT, less_equal, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, less_equal, DataType::INT, DataType::INT,
 		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetle %al" }));
-	addBinaryOperator(DataType::INT, greater_equal, DataType::INT, DataType::INT, 
+	addBinaryOperator(DataType::INT, greater_equal, DataType::INT, DataType::INT,
 		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetge %al" }));
 
 	addBinaryOperator(DataType::INT, left_shift, DataType::INT, DataType::INT,
@@ -461,12 +487,22 @@ void initAST() {
 	addBinaryOperator(DataType::INT_REF, and_assign, DataType::INT, DataType::INT_REF,
 		assembly({ "\tand %ecx, (%eax)" }));
 
-	addUnaryOperator(DataType::INT, negation, DataType::INT, 
+	addUnaryOperator(DataType::INT, negation, DataType::INT,
 		assembly({ "\tneg %eax" }));
-	addUnaryOperator(DataType::INT, bitwise_complement, DataType::INT, 
+	addUnaryOperator(DataType::INT, bitwise_complement, DataType::INT,
 		assembly({ "\tnot %eax" }));
-	addUnaryOperator(DataType::INT, logical_negation, DataType::INT, 
+	addUnaryOperator(DataType::INT, logical_negation, DataType::INT,
 		assembly({ "\tcmpl $0, %eax", "\tmovl $0, %eax", "\tsete %al" }));
+
+	addUnaryOperator(DataType::INT_REF, prefix_increment, DataType::INT_REF,
+		assembly({ "\tincl (%eax)" }));
+	addUnaryOperator(DataType::INT_REF, prefix_decrement, DataType::INT_REF,
+		assembly({ "\tdecl (%eax)" }));
+
+	addUnaryOperator(DataType::INT_REF, postfix_increment, DataType::INT,
+		assembly({ "\tmovl (%eax), %ecx", "\tincl (%eax)", "\tmovl %ecx, %eax" }));
+	addUnaryOperator(DataType::INT_REF, postfix_decrement, DataType::INT,
+		assembly({ "\tmovl (%eax), %ecx", "\tdecl (%eax)", "\tmovl %ecx, %eax" }));
 }
 
 void BinaryOperator::generateAssembly(assembly& ass)
