@@ -244,8 +244,16 @@ Expression* compile_15(std::queue<token>& tokens) {
 // a?b:c
 // throw _
 // co_yield _
+Expression* compile_17(std::queue<token>& tokens);
 Expression* compile_16(std::queue<token>& tokens) {
 	Expression* exp = compile_15(tokens);
+	if (tokens.front().type == QUESTION_MARK) {
+		tokens.pop();
+		Expression* exp2 = compile_17(tokens);
+		check_token(tokens, COLON);
+		Expression* exp3 = compile_16(tokens);
+		exp = new TernaryExpression(exp, exp2, exp3, exp2->return_type);
+	}
 	if (tokens.front().type == EQUAL_SIGN) {
 		tokens.pop();
 		Expression* exp2 = compile_16(tokens);
@@ -314,6 +322,18 @@ Expression* compile_17(std::queue<token>& tokens) {
 	return exp;
 }
 
+BlockItem* compile_block_item(std::queue<token>& tokens);
+
+CodeBlock* compile_code_block(std::queue<token>& tokens) {
+	check_token(tokens, OPEN_BRACES);
+	CodeBlock* cb = new CodeBlock();
+	while (tokens.front().type != CLOSE_BRACES) {
+		cb->lines.push_back(compile_block_item(tokens));
+	}
+	check_token(tokens, CLOSE_BRACES);
+	return cb;
+}
+
 LineOfCode* compile_line(std::queue<token>& tokens) {
 	token t = tokens.front();
 	if (t.type == RETURN_KEYWORD) {
@@ -322,7 +342,32 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 		check_token(tokens, SEMICOLON);
 		return r;
 	}
-	else if (t.type == INT_KEYWORD) {
+	else if (t.type == IF_KEYWORD) {
+		check_token(tokens, IF_KEYWORD);
+		check_token(tokens, OPEN_PARENTHESES);
+		Expression* cond_exp = compile_17(tokens);
+		check_token(tokens, CLOSE_PARENTHESES);
+		LineOfCode* if_cond = compile_line(tokens);
+		LineOfCode* else_cond = nullptr;
+		if (tokens.front().type == ELSE_KEYWORD) {
+			check_token(tokens, ELSE_KEYWORD);
+			else_cond = compile_line(tokens);
+		}
+		return new IfStatement(cond_exp, if_cond, else_cond);
+	}
+	else if (t.type == OPEN_BRACES) {
+		return compile_code_block(tokens);
+	}
+	else {
+		Expression* e = compile_17(tokens);
+		check_token(tokens, SEMICOLON);
+		return new ExpressionLine(e);
+	}
+}
+
+BlockItem* compile_block_item(std::queue<token>& tokens) {
+	token t = tokens.front();
+	if (t.type == INT_KEYWORD) {
 		check_token(tokens, INT_KEYWORD);
 		std::string name = check_token(tokens, NAME).value;
 		Expression* exp = nullptr;
@@ -333,11 +378,7 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 		check_token(tokens, SEMICOLON);
 		return new VariableDeclarationLine(exp, DataType::INT, name);
 	}
-	else {
-		Expression* e = compile_17(tokens);
-		check_token(tokens, SEMICOLON);
-		return new ExpressionLine(e);
-	}
+	else return compile_line(tokens);
 }
 
 Function* compile_function(std::queue<token>& tokens)
@@ -347,11 +388,7 @@ Function* compile_function(std::queue<token>& tokens)
 	f->name = check_token(tokens, NAME).value;
 	check_token(tokens, OPEN_PARENTHESES);
 	check_token(tokens, CLOSE_PARENTHESES);
-	check_token(tokens, OPEN_BRACES);
-	while (tokens.front().type != CLOSE_BRACES) {
-		f->lines.push_back(compile_line(tokens));
-	}
-	check_token(tokens, CLOSE_BRACES);
+	f->lines = compile_code_block(tokens);
 	return f;
 }
 Application* compile_application(std::queue<token>& tokens)
@@ -376,12 +413,12 @@ struct variable {
 
 struct scope {
 	scope* parent;
+	int current_variable_location = -8;
 	std::map<std::string, variable> variables;
 };
 
 scope* curr_scope;
 
-int current_variable_location = -8;
 
 
 void Application::generateAssembly(assembly& ass)
@@ -391,17 +428,24 @@ void Application::generateAssembly(assembly& ass)
 	}
 }
 
+void CodeBlock::generateAssembly(assembly& ass) {
+	curr_scope = new scope{ curr_scope, curr_scope->current_variable_location };
+	for (BlockItem* line : lines) {
+		line->generateAssembly(ass);
+	}
+	curr_scope = curr_scope->parent;
+	ass.add("\tmovq " + std::to_string(curr_scope->current_variable_location+8) + "(%rbp), %rsp");
+}
+
 void Function::generateAssembly(assembly& ass)
 {
-	current_variable_location = -8;
 	curr_scope = new scope();
+	curr_scope->current_variable_location = -8;
 	ass.add(".globl	main");
 	ass.add(name + ":");
 	ass.add("\tpush %rbp");
 	ass.add("\tmovq %rsp, %rbp");
-	for (LineOfCode* line : lines) {
-		line->generateAssembly(ass);
-	}
+	lines->generateAssembly(ass);
 }
 
 void Return::generateAssembly(assembly& ass)
@@ -509,28 +553,29 @@ void BinaryOperator::generateAssembly(assembly& ass)
 {
 	static int logical_operator_clause = 0;
 	if (op == logical_or) {
+		int logical_operator_cl = logical_operator_clause++;
 		right->generateAssembly(ass);
 		ass.add("\tcmpl $0, %eax");
-		ass.add("\tje _loc" + std::to_string(logical_operator_clause));
+		ass.add("\tje _loc" + std::to_string(logical_operator_cl));
 		ass.add("\tmovl $1, %eax");
-		ass.add("jmp _loc_end" + std::to_string(logical_operator_clause));
-		ass.add("_loc" + std::to_string(logical_operator_clause) + ":");
+		ass.add("jmp _loc_end" + std::to_string(logical_operator_cl));
+		ass.add("_loc" + std::to_string(logical_operator_cl) + ":");
 		ass.add("\tcmpl $0, %eax");
 		ass.add("\tmovl $0, %eax");
 		ass.add("\tsetne %al");
-		ass.add("_loc_end" + std::to_string(logical_operator_clause) + ":");
-		logical_operator_clause++;
+		ass.add("_loc_end" + std::to_string(logical_operator_cl) + ":");
 		return;
 	}
 	else if (op == logical_and) {
+		int logical_operator_cl = logical_operator_clause++;
 		ass.add("\tcmpl $0, %eax");
-		ass.add("\tjne _loc" + std::to_string(logical_operator_clause));
-		ass.add("jmp _loc_end" + std::to_string(logical_operator_clause));
-		ass.add("_loc" + std::to_string(logical_operator_clause) + ":");
+		ass.add("\tjne _loc" + std::to_string(logical_operator_cl));
+		ass.add("jmp _loc_end" + std::to_string(logical_operator_cl));
+		ass.add("_loc" + std::to_string(logical_operator_cl) + ":");
 		ass.add("\tcmpl $0, %eax");
 		ass.add("\tmovl $0, %eax");
 		ass.add("\tsetne %al");
-		ass.add("_loc_end" + std::to_string(logical_operator_clause) + ":");
+		ass.add("_loc_end" + std::to_string(logical_operator_cl) + ":");
 		return;
 
 	}
@@ -576,12 +621,48 @@ void VariableDeclarationLine::generateAssembly(assembly& ass)
 	else {
 		init_exp->generateAssembly(ass);
 	}
-	curr_scope->variables.insert({ name, {name, current_variable_location} });
-	current_variable_location -= 8;
+	curr_scope->variables.insert({ name, {name, curr_scope->current_variable_location} });
+	curr_scope->current_variable_location -= 8;
 	ass.add("\tpush %rax");
 }
 
 void VariableRef::generateAssembly(assembly& ass)
 {
-	ass.add("\tleal " + std::to_string(curr_scope->variables[name].location) + "(%rbp), %eax");
+	scope* sc = curr_scope;
+	while (sc && sc->variables.find(name) == sc->variables.end()) {
+		sc = sc->parent;
+	}
+	if (sc)
+		ass.add("\tleal " + std::to_string(sc->variables[name].location) + "(%rbp), %eax");
+	else
+		; //could not find variable
+		
+}
+
+void IfStatement::generateAssembly(assembly& ass)
+{
+	static int if_clause = 0;
+	int if_cl = if_clause++;
+	condition->generateAssembly(ass);
+	ass.add("\tcmpl $0, %eax");
+	ass.add("\tje _e3_if_" + std::to_string(if_cl));
+	if_cond->generateAssembly(ass);
+	ass.add("\tjmp _post_conditional_if_" + std::to_string(if_cl));
+	ass.add("_e3_if_" + std::to_string(if_cl) + ":");
+	if(else_cond) else_cond->generateAssembly(ass);
+	ass.add("_post_conditional_if_" + std::to_string(if_cl) + ":");
+}
+
+void TernaryExpression::generateAssembly(assembly& ass)
+{
+	static int ternary_clause = 0;
+	int ternary_cl = ternary_clause++;
+	condition->generateAssembly(ass);
+	ass.add("\tcmpl $0, %eax");
+	ass.add("\tje _e3_" + std::to_string(ternary_cl));
+	if_cond->generateAssembly(ass);
+	ass.add("\tjmp _post_conditional_" + std::to_string(ternary_cl));
+	ass.add("_e3_" + std::to_string(ternary_cl) + ":");
+	else_cond->generateAssembly(ass);
+	ass.add("_post_conditional_" + std::to_string(ternary_cl) + ":");
 }

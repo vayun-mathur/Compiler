@@ -6,10 +6,10 @@
 void initAST();
 
 enum class LineType {
-	Return, Expression, VariableDeclaration
+	Return, Expression, VariableDeclaration, If, Block
 };
 enum class ExpressionType {
-	BinaryOperator, ConstantInt, VariableRef, UnaryOperator
+	BinaryOperator, ConstantInt, VariableRef, UnaryOperator, Ternary
 };
 
 class DataType {
@@ -28,14 +28,14 @@ public:
 
 	}
 	DataType(int id, int pointers, bool reference)
-	: id(id), pointers(pointers), reference(reference) {
+		: id(id), pointers(pointers), reference(reference) {
 
 	}
 	bool operator==(const DataType& other) {
 		return id == other.id && pointers == other.pointers && reference == other.reference;
 	}
 	bool operator<(const DataType& other) const {
-		if(id < other.id) return true;
+		if (id < other.id) return true;
 		if (id > other.id) return false;
 		if (pointers < other.pointers) return true;
 		if (pointers > other.pointers) return false;
@@ -78,9 +78,14 @@ struct ASTNode {
 	virtual void generateAssembly(assembly& ass) = 0;
 };
 
-struct LineOfCode : ASTNode {
+struct BlockItem : ASTNode {
 	LineType type;
-	LineOfCode(LineType type) : type(type) {
+	BlockItem(LineType type) : type(type) {
+	}
+};
+
+struct LineOfCode : BlockItem {
+	LineOfCode(LineType type) : BlockItem(type) {
 	}
 };
 
@@ -98,11 +103,17 @@ struct ExpressionLine : LineOfCode {
 	virtual void generateAssembly(assembly& ass) override;
 };
 
-struct VariableDeclarationLine : LineOfCode {
+struct CodeBlock : LineOfCode {
+	std::vector<BlockItem*> lines;
+	CodeBlock() : LineOfCode(LineType::Block) {}
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct VariableDeclarationLine : BlockItem {
 	DataType var_type;
 	Expression* init_exp;
 	std::string name;
-	VariableDeclarationLine(Expression* init_exp, DataType var_type, std::string name) : LineOfCode(LineType::VariableDeclaration),
+	VariableDeclarationLine(Expression* init_exp, DataType var_type, std::string name) : BlockItem(LineType::VariableDeclaration),
 		init_exp(init_exp), var_type(var_type), name(name) {
 
 	}
@@ -111,7 +122,7 @@ struct VariableDeclarationLine : LineOfCode {
 
 struct Function : ASTNode {
 	std::string name;
-	std::vector<LineOfCode*> lines;
+	CodeBlock* lines;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
@@ -123,6 +134,15 @@ struct Application : ASTNode {
 struct Return : LineOfCode {
 	Return(Expression* expr) : LineOfCode(LineType::Return), expr(expr) { };
 	Expression* expr;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct IfStatement : LineOfCode {
+	Expression* condition;
+	LineOfCode* if_cond, * else_cond;
+	IfStatement(Expression* condition, LineOfCode* if_cond, LineOfCode* else_cond) : LineOfCode(LineType::If), 
+		condition(condition), if_cond(if_cond), else_cond(else_cond) { };
+
 	virtual void generateAssembly(assembly& ass) override;
 };
 
@@ -155,6 +175,15 @@ struct UnaryOperator : Expression {
 	UnaryOperator(unary_operator op, Expression* left, DataType return_type) : Expression(ExpressionType::UnaryOperator, return_type), op(op), left(left) { };
 	Expression* left;
 	unary_operator op;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct TernaryExpression : Expression {
+	TernaryExpression(Expression* condition, Expression* if_cond, Expression* else_cond, DataType return_type) :
+		Expression(ExpressionType::Ternary, return_type), condition(condition), if_cond(if_cond), else_cond(else_cond) { };
+	Expression* condition;
+	Expression* if_cond;
+	Expression* else_cond;
 	virtual void generateAssembly(assembly& ass) override;
 };
 

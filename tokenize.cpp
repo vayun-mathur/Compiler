@@ -19,6 +19,11 @@ token_data token_regex[] = {
     {RETURN_KEYWORD, R"(return)"},
     {SEMICOLON, R"(;)"},
 
+    {IF_KEYWORD, R"(if)"},
+    {ELSE_KEYWORD, R"(else)"},
+    {COLON, R"(:)"},
+    {QUESTION_MARK, R"(\?)"},
+
     {INCREMENT, R"(\+\+)"},
     {DECREMENT, R"(\-\-)"},
 
