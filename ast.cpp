@@ -34,11 +34,35 @@ Expression* compile_0(std::queue<token>& tokens) {
 	}
 }
 
-Expression* compile_1(std::queue<token>& tokens) {
+//::
+//compile_1
+
+// _++
+// _--
+// type()
+// type{}
+// a()
+// a[]
+// .
+// ->
+//compile_2
+
+// ++_
+// --_
+// +_
+// (type)_
+// *_
+// &_
+// sizeof _
+// new
+// new[]
+// delete
+// delete[]
+Expression* compile_3(std::queue<token>& tokens) {
 	if (tokens.front().type == MINUS || tokens.front().type == BITWISE_COMPLEMENT || tokens.front().type == EXCLAMATION) {
 		token t = tokens.front();
 		tokens.pop();
-		Expression* exp = compile_1(tokens);
+		Expression* exp = compile_3(tokens);
 		if (t.type == MINUS) {
 			exp = create_unary_operator(exp, negation);
 		}
@@ -55,12 +79,16 @@ Expression* compile_1(std::queue<token>& tokens) {
 	}
 }
 
+// .*
+// ->*
+//compile_4
+
 Expression* compile_5(std::queue<token>& tokens) {
-	Expression* exp = compile_1(tokens); 
+	Expression* exp = compile_3(tokens); 
 	while (tokens.front().type == ASTERISK || tokens.front().type == SLASH) {
 		token t = tokens.front();
 		tokens.pop();
-		Expression* exp2 = compile_1(tokens);
+		Expression* exp2 = compile_3(tokens);
 		if (t.type == ASTERISK) {
 			exp = create_binary_operator(exp, exp2, multiply);
 		}
@@ -90,12 +118,31 @@ Expression* compile_6(std::queue<token>& tokens) {
 	return exp;
 }
 
-Expression* compile_9(std::queue<token>& tokens) {
+Expression* compile_7(std::queue<token>& tokens) {
 	Expression* exp = compile_6(tokens);
-	while (tokens.front().type == LESS_THAN || tokens.front().type == LESS_OR_EQUAL_TO || tokens.front().type == GREATER_THAN || tokens.front().type == GREATER_OR_EQUAL_TO) {
+	while (tokens.front().type == LEFT_SHIFT || tokens.front().type == RIGHT_SHIFT) {
 		token t = tokens.front();
 		tokens.pop();
 		Expression* exp2 = compile_6(tokens);
+		if (t.type == LEFT_SHIFT) {
+			exp = create_binary_operator(exp, exp2, left_shift);
+		}
+		else {
+			exp = create_binary_operator(exp, exp2, right_shift);
+		}
+	}
+	return exp;
+}
+
+// <=>
+//compile_8
+
+Expression* compile_9(std::queue<token>& tokens) {
+	Expression* exp = compile_7(tokens);
+	while (tokens.front().type == LESS_THAN || tokens.front().type == LESS_OR_EQUAL_TO || tokens.front().type == GREATER_THAN || tokens.front().type == GREATER_OR_EQUAL_TO) {
+		token t = tokens.front();
+		tokens.pop();
+		Expression* exp2 = compile_7(tokens);
 		if (t.type == LESS_THAN) {
 			exp = create_binary_operator(exp, exp2, less);
 		}
@@ -128,12 +175,41 @@ Expression* compile_10(std::queue<token>& tokens) {
 	return exp;
 }
 
-Expression* compile_14(std::queue<token>& tokens) {
+Expression* compile_11(std::queue<token>& tokens) {
 	Expression* exp = compile_10(tokens);
-	while (tokens.front().type == LOGICAL_AND) {
-		token t = tokens.front();
+	while (tokens.front().type == BITWISE_AND) {
 		tokens.pop();
 		Expression* exp2 = compile_10(tokens);
+		exp = create_binary_operator(exp, exp2, bitwise_and);
+	}
+	return exp;
+}
+
+Expression* compile_12(std::queue<token>& tokens) {
+	Expression* exp = compile_11(tokens);
+	while (tokens.front().type == BITWISE_XOR) {
+		tokens.pop();
+		Expression* exp2 = compile_11(tokens);
+		exp = create_binary_operator(exp, exp2, bitwise_xor);
+	}
+	return exp;
+}
+
+Expression* compile_13(std::queue<token>& tokens) {
+	Expression* exp = compile_12(tokens);
+	while (tokens.front().type == BITWISE_OR) {
+		tokens.pop();
+		Expression* exp2 = compile_12(tokens);
+		exp = create_binary_operator(exp, exp2, bitwise_or);
+	}
+	return exp;
+}
+
+Expression* compile_14(std::queue<token>& tokens) {
+	Expression* exp = compile_13(tokens);
+	while (tokens.front().type == LOGICAL_AND) {
+		tokens.pop();
+		Expression* exp2 = compile_13(tokens);
 		exp = create_binary_operator(exp, exp2, logical_and);
 	}
 	return exp;
@@ -142,7 +218,6 @@ Expression* compile_14(std::queue<token>& tokens) {
 Expression* compile_15(std::queue<token>& tokens) {
 	Expression* exp = compile_14(tokens);
 	while (tokens.front().type == LOGICAL_OR) {
-		token t = tokens.front();
 		tokens.pop();
 		Expression* exp2 = compile_14(tokens);
 		exp = create_binary_operator(exp, exp2, logical_or);
@@ -150,16 +225,67 @@ Expression* compile_15(std::queue<token>& tokens) {
 	return exp;
 }
 
+// a?b:c
+// throw _
+// co_yield _
 Expression* compile_16(std::queue<token>& tokens) {
 	Expression* exp = compile_15(tokens);
-	while (tokens.front().type == EQUAL_SIGN) {
-		token t = tokens.front();
+	if (tokens.front().type == EQUAL_SIGN) {
 		tokens.pop();
-		if (t.type == EQUAL_SIGN) {
-			Expression* exp2 = compile_15(tokens);
-			exp = create_binary_operator(exp, exp2, assignment);
-		}
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, assignment);
 	}
+	if (tokens.front().type == ADD_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, add_assign);
+	}
+	if (tokens.front().type == SUBTRACT_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, subtract_assign);
+	}
+	if (tokens.front().type == MULTIPLY_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, multiply_assign);
+	}
+	if (tokens.front().type == DIVIDE_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, divide_assign);
+	}
+	if (tokens.front().type == MOD_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, mod_assign);
+	}
+	if (tokens.front().type == LEFT_SHIFT_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, left_shift_assign);
+	}
+	if (tokens.front().type == RIGHT_SHIFT_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, right_shift_assign);
+	}
+	if (tokens.front().type == AND_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, and_assign);
+	}
+	if (tokens.front().type == OR_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, or_assign);
+	}
+	if (tokens.front().type == XOR_ASSIGN) {
+		tokens.pop();
+		Expression* exp2 = compile_16(tokens);
+		exp = create_binary_operator(exp, exp2, xor_assign);
+	}
+
 	return exp;
 }
 
@@ -222,7 +348,13 @@ struct variable {
 	int location;
 };
 
-std::map<std::string, variable> variables;
+struct scope {
+	scope* parent;
+	std::map<std::string, variable> variables;
+};
+
+scope* curr_scope;
+
 int current_variable_location = -8;
 
 
@@ -235,6 +367,8 @@ void Application::generateAssembly(assembly& ass)
 
 void Function::generateAssembly(assembly& ass)
 {
+	current_variable_location = -8;
+	curr_scope = new scope();
 	ass.add(".globl	main");
 	ass.add(name + ":");
 	ass.add("\tpush %rbp");
@@ -255,66 +389,84 @@ void Return::generateAssembly(assembly& ass)
 	ass.add("\tret");
 }
 
+void addBinaryOperator(DataType type1, binary_operator op, DataType type2, DataType return_type, assembly ass) {
+	binary_operator_result_type[{type1, op, type2 }] = return_type;
+	binary_operator_assembly[{type1, op, type2 }] = ass;
+}
+
+void addUnaryOperator(DataType type1, unary_operator op, DataType return_type, assembly ass) {
+	unary_operator_result_type[{type1, op }] = return_type;
+	unary_operator_assembly[{type1, op }] = ass;
+}
+
 void initAST() {
-	binary_operator_result_type[{DataType::INT, add, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, add, DataType::INT }] = 
-		assembly({ "\taddl %ecx, %eax" });
+	addBinaryOperator(DataType::INT, add, DataType::INT, DataType::INT, 
+		assembly({ "\taddl %ecx, %eax" }));
+	addBinaryOperator(DataType::INT, subtract, DataType::INT, DataType::INT, 
+		assembly({ "\tsubl %ecx, %eax" }));
+	addBinaryOperator(DataType::INT, multiply, DataType::INT, DataType::INT, 
+		assembly({ "\timull %ecx, %eax" }));
+	addBinaryOperator(DataType::INT, divide, DataType::INT, DataType::INT,
+		assembly({ "\tmovl $0, %edx", "\tidivl %ecx" }));
+	addBinaryOperator(DataType::INT, mod, DataType::INT, DataType::INT, 
+		assembly({ "\tmovl $0, %edx", "\tidivl %ecx", "\tmovl %edx, %eax" }));
 
-	binary_operator_result_type[{DataType::INT, subtract, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, subtract, DataType::INT }] =
-		assembly({ "\tsubl %ecx, %eax" });
+	addBinaryOperator(DataType::INT, equal, DataType::INT, DataType::INT,
+		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsete %al" }));
+	addBinaryOperator(DataType::INT, not_equal, DataType::INT, DataType::INT, 
+		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetne %al" }));
+	addBinaryOperator(DataType::INT, less, DataType::INT, DataType::INT, 
+		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetl %al" }));
+	addBinaryOperator(DataType::INT, greater, DataType::INT, DataType::INT, 
+		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetg %al" }));
+	addBinaryOperator(DataType::INT, less_equal, DataType::INT, DataType::INT, 
+		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetle %al" }));
+	addBinaryOperator(DataType::INT, greater_equal, DataType::INT, DataType::INT, 
+		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetge %al" }));
 
-	binary_operator_result_type[{DataType::INT, multiply, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, multiply, DataType::INT }] =
-		assembly({ "\timull %ecx, %eax" });
+	addBinaryOperator(DataType::INT, left_shift, DataType::INT, DataType::INT,
+		assembly({ "\tsall %cl, %eax" }));
+	addBinaryOperator(DataType::INT, right_shift, DataType::INT, DataType::INT,
+		assembly({ "\tsarl %cl, %eax" }));
 
-	binary_operator_result_type[{DataType::INT, divide, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, divide, DataType::INT }] =
-		assembly({ "\tmovl $0, %edx", "\tidivl %ecx" });
+	addBinaryOperator(DataType::INT, bitwise_xor, DataType::INT, DataType::INT,
+		assembly({ "\txor %ecx, %eax" }));
+	addBinaryOperator(DataType::INT, bitwise_or, DataType::INT, DataType::INT,
+		assembly({ "\tor %ecx, %eax" }));
+	addBinaryOperator(DataType::INT, bitwise_and, DataType::INT, DataType::INT,
+		assembly({ "\tand %ecx, %eax" }));
 
-	binary_operator_result_type[{DataType::INT, mod, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, mod, DataType::INT }] =
-		assembly({ "\tmovl $0, %edx", "\tidivl %ecx", "\tmovl %edx, %eax" });
+	addBinaryOperator(DataType::INT_REF, assignment, DataType::INT, DataType::INT_REF,
+		assembly({ "\tmovl %ecx, (%eax)" }));
+	addBinaryOperator(DataType::INT_REF, add_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\taddl %ecx, (%eax)" }));
+	addBinaryOperator(DataType::INT_REF, subtract_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\tsubl %ecx, (%eax)" }));
+	addBinaryOperator(DataType::INT_REF, multiply_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\timull %ecx, (%eax)" }));
+	addBinaryOperator(DataType::INT_REF, divide_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\tmovl %eax, %r9d", "\tmovl $0, %edx", "\tidivl %ecx", "\tmovl %eax, (%r9d)", "\tmovl %r9d, %eax" }));
+	addBinaryOperator(DataType::INT_REF, mod_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\tmovl %eax, %r9d", "\tmovl $0, %edx", "\tidivl %ecx", "\tmovl %edx, (%r9d)", "\tmovl %r9d, %eax" }));
 
-	binary_operator_result_type[{DataType::INT, equal, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, equal, DataType::INT }] =
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsete %al" });
+	addBinaryOperator(DataType::INT_REF, left_shift_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\tsall %cl, (%eax)" }));
+	addBinaryOperator(DataType::INT_REF, right_shift_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\tsarl %cl, (%eax)" }));
 
-	binary_operator_result_type[{DataType::INT, not_equal, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, not_equal, DataType::INT }] =
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetne %al" });
+	addBinaryOperator(DataType::INT_REF, xor_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\txor %ecx, (%eax)" }));
+	addBinaryOperator(DataType::INT_REF, or_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\tor %ecx, (%eax)" }));
+	addBinaryOperator(DataType::INT_REF, and_assign, DataType::INT, DataType::INT_REF,
+		assembly({ "\tand %ecx, (%eax)" }));
 
-	binary_operator_result_type[{DataType::INT, less, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, less, DataType::INT }] =
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetl %al" });
-
-	binary_operator_result_type[{DataType::INT, greater, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, greater, DataType::INT }] =
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetg %al" });
-
-	binary_operator_result_type[{DataType::INT, less_equal, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, less_equal, DataType::INT }] =
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetle %al" });
-
-	binary_operator_result_type[{DataType::INT, greater_equal, DataType::INT }] = DataType::INT;
-	binary_operator_assembly[{DataType::INT, greater_equal, DataType::INT }] =
-		assembly({ "\tcmpl %eax, %ecx", "\tmovl $0, %eax", "\tsetge %al" });
-
-	binary_operator_result_type[{DataType::INT_REF, assignment, DataType::INT }] = DataType::INT_REF;
-	binary_operator_assembly[{DataType::INT_REF, assignment, DataType::INT }] =
-		assembly({ "\tmovl %ecx, (%eax)" });
-
-	unary_operator_result_type[{DataType::INT, negation }] = DataType::INT;
-	unary_operator_assembly[{DataType::INT, negation }] =
-		assembly({ "\tneg %eax" });
-
-	unary_operator_result_type[{DataType::INT, bitwise_complement }] = DataType::INT;
-	unary_operator_assembly[{DataType::INT, bitwise_complement }] =
-		assembly({ "\tnot %eax" });
-
-	unary_operator_result_type[{DataType::INT, logical_negation }] = DataType::INT;
-	unary_operator_assembly[{DataType::INT, logical_negation }] =
-		assembly({ "\tcmpl $0, %eax", "\tmovl $0, %eax", "\tsete %al" });
+	addUnaryOperator(DataType::INT, negation, DataType::INT, 
+		assembly({ "\tneg %eax" }));
+	addUnaryOperator(DataType::INT, bitwise_complement, DataType::INT, 
+		assembly({ "\tnot %eax" }));
+	addUnaryOperator(DataType::INT, logical_negation, DataType::INT, 
+		assembly({ "\tcmpl $0, %eax", "\tmovl $0, %eax", "\tsete %al" }));
 }
 
 void BinaryOperator::generateAssembly(assembly& ass)
@@ -388,12 +540,12 @@ void VariableDeclarationLine::generateAssembly(assembly& ass)
 	else {
 		init_exp->generateAssembly(ass);
 	}
-	variables.insert({ name, {name, current_variable_location} });
+	curr_scope->variables.insert({ name, {name, current_variable_location} });
 	current_variable_location -= 8;
 	ass.add("\tpush %rax");
 }
 
 void VariableRef::generateAssembly(assembly& ass)
 {
-	ass.add("\tleal " + std::to_string(variables[name].location) + "(%rbp), %eax");
+	ass.add("\tleal " + std::to_string(curr_scope->variables[name].location) + "(%rbp), %eax");
 }

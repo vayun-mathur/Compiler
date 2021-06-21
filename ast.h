@@ -129,8 +129,13 @@ struct Return : LineOfCode {
 enum binary_operator {
 	add, subtract, multiply, divide, mod,
 	logical_and, logical_or,
+	bitwise_and, bitwise_or, bitwise_xor,
 	equal, not_equal, less, greater, less_equal, greater_equal,
-	assignment
+	left_shift, right_shift,
+	assignment,
+	add_assign, subtract_assign, multiply_assign, divide_assign, mod_assign,
+	left_shift_assign, right_shift_assign,
+	and_assign, or_assign, xor_assign
 };
 
 struct BinaryOperator : Expression {
