@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
 	assembly ass;
 	Application* ast = compile_application(token_queue);
 	ast->generateAssembly(ass);
-	std::cout << ass.str() << std::endl;
+	//std::cout << ass.str() << std::endl;
 	std::ofstream outfile = std::ofstream(argv[2]);
 	outfile << ass.str();
 	outfile.close();

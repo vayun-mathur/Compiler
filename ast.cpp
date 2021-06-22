@@ -14,6 +14,19 @@ token check_token(std::queue<token>& tokens, token_type type) {
 	return t;
 }
 
+DataType getDataType(std::queue<token>& tokens) {
+	token t = tokens.front();
+	tokens.pop();
+	DataType d = DataType();
+	if (t.type == INT_KEYWORD) d.id = 0;
+	d.pointers = 0;
+	while (tokens.front().type == BITWISE_AND) {
+		tokens.pop();
+		d.reference++;
+	}
+	return d;
+}
+
 inline BinaryOperator* create_binary_operator(Expression* exp1, Expression* exp2, binary_operator op) {
 	return new BinaryOperator(op, exp1, exp2, binary_operator_result_type[{exp1->return_type, op, exp2->return_type}]);
 }
@@ -32,7 +45,7 @@ Expression* compile_0(std::queue<token>& tokens) {
 		return new ConstantInt(stoi(check_token(tokens, INT_VALUE).value));
 	}
 	else {
-		return new VariableRef(check_token(tokens, NAME).value, DataType::INT);
+		return new VariableRef(check_token(tokens, NAME).value);
 	}
 }
 
@@ -452,15 +465,15 @@ Function* compile_function(std::queue<token>& tokens)
 	check_token(tokens, INT_KEYWORD);
 	f->name = check_token(tokens, NAME).value;
 	check_token(tokens, OPEN_PARENTHESES);
-	if (tokens.front().type == INT_KEYWORD) {
-		tokens.pop();
+	if (tokens.front().type != CLOSE_PARENTHESES) {
+		DataType dt = getDataType(tokens);
 		std::string name = check_token(tokens, NAME).value;
-		f->params.push_back(name);
+		f->params.push_back({ name, dt });
 		while (tokens.front().type == COMMA) {
 			tokens.pop();
-			check_token(tokens, INT_KEYWORD);
+			DataType dt = getDataType(tokens);
 			std::string name = check_token(tokens, NAME).value;
-			f->params.push_back(name);
+			f->params.push_back({ name, dt });
 		}
 	}
 	check_token(tokens, CLOSE_PARENTHESES);
@@ -486,6 +499,7 @@ Application* compile_application(std::queue<token>& tokens)
 struct variable {
 	std::string name;
 	int location;
+	DataType type;
 };
 
 struct scope {
@@ -498,12 +512,10 @@ scope* curr_scope;
 
 struct function {
 	std::string name;
-	unsigned int params;
+	std::vector<std::pair<std::string, DataType>> params;
 	bool operator<(const function& other) const {
 		if (name < other.name) return true;
 		if (name > other.name) return false;
-		if (params < other.params) return true;
-		if (params > other.params) return false;
 		return false;
 	}
 };
@@ -528,7 +540,7 @@ void CodeBlock::generateAssembly(assembly& ass) {
 
 void Function::generateAssembly(assembly& ass)
 {
-	functions.insert({ { name, params.size() }, lines!=nullptr });
+	functions.insert({ { name, params }, lines!=nullptr });
 	if (lines == nullptr) return;
 	curr_scope = new scope();
 	curr_scope->current_variable_location = -8;
@@ -537,7 +549,7 @@ void Function::generateAssembly(assembly& ass)
 	ass.add("\tpush %rbp");
 	ass.add("\tmovq %rsp, %rbp");
 	for (int i = 0; i < params.size(); i++) {
-		curr_scope->variables.insert({ params[i], {params[i], 8 * (i+2)} });
+		curr_scope->variables.insert({ params[i].first, {params[i].first, 8 * (i+2), params[i].second} });
 	}
 	lines->generateAssembly(ass);
 }
@@ -679,12 +691,12 @@ void BinaryOperator::generateAssembly(assembly& ass)
 	ass.add("\tpop %rcx");
 	DataType l = left->return_type;
 	DataType r = right->return_type;
-	if (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && r.reference) {
-		r.reference = false;
+	while (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && r.reference) {
+		r.reference--;
 		ass.add("\tmovl (%ecx), %ecx");
 	}
-	if (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && l.reference) {
-		l.reference = false;
+	while (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && l.reference) {
+		l.reference--;
 		ass.add("\tmovl (%eax), %eax");
 	}
 	ass.add(binary_operator_assembly[{l, op, r}]);
@@ -716,7 +728,7 @@ void VariableDeclarationLine::generateAssembly(assembly& ass)
 	else {
 		init_exp->generateAssembly(ass);
 	}
-	curr_scope->variables.insert({ name, {name, curr_scope->current_variable_location} });
+	curr_scope->variables.insert({ name, {name, curr_scope->current_variable_location, var_type} });
 	curr_scope->current_variable_location -= 8;
 	ass.add("\tpush %rax");
 }
@@ -727,8 +739,11 @@ void VariableRef::generateAssembly(assembly& ass)
 	while (sc && sc->variables.find(name) == sc->variables.end()) {
 		sc = sc->parent;
 	}
-	if (sc)
+	if (sc) {
+		return_type = sc->variables[name].type;
+		return_type.reference++;
 		ass.add("\tleal " + std::to_string(sc->variables[name].location) + "(%rbp), %eax");
+	}
 	else
 		; //could not find variable
 
@@ -854,14 +869,16 @@ void Continue::generateAssembly(assembly& ass) {
 }
 
 void FunctionCall::generateAssembly(assembly& ass) {
-	if (functions.find({ name, params.size() }) == functions.end()) return; //function does not exist
+	if (functions.find({ name }) == functions.end()) return; //function does not exist
+	function f = functions.find({name})->first;
 	ass.add("\tsubq $" + std::to_string(std::max(32u, 8 * params.size())) + ", %rsp");
-	for (auto it = params.begin(); it != params.end(); it++) {
-		(*it)->generateAssembly(ass);
-		if ((*it)->return_type == DataType::INT_REF) {
+	for (int i = 0; i < params.size(); i++) {
+		params[i]->generateAssembly(ass);
+		while (params[i]->return_type.reference > f.params[i].second.reference) {
+			params[i]->return_type.reference--;
 			ass.add("\tmovl (%eax), %eax");
 		}
-		ass.add("\tmovq %rax, " + std::to_string(8 * (it - params.begin())) + "(%rsp)");
+		ass.add("\tmovq %rax, " + std::to_string(8 * i) + "(%rsp)");
 	}
 	if(params.size() > 0) ass.add("\tmovq 0(%rsp), %rcx");
 	if (params.size() > 1) ass.add("\tmovq 8(%rsp), %rdx");

@@ -18,16 +18,16 @@ public:
 	static const DataType INT_REF;
 	int id;
 	int pointers;
-	bool reference;
+	int reference;
 	DataType()
-		: id(0), pointers(0), reference(false) {
+		: id(0), pointers(0), reference(0) {
 
 	}
 	DataType(const DataType& other)
 		: id(other.id), pointers(other.pointers), reference(other.reference) {
 
 	}
-	DataType(int id, int pointers, bool reference)
+	DataType(int id, int pointers, int reference)
 		: id(id), pointers(pointers), reference(reference) {
 
 	}
@@ -44,8 +44,8 @@ public:
 	}
 };
 
-inline const DataType DataType::INT = DataType(0, 0, false);
-inline const DataType DataType::INT_REF = DataType(0, 0, true);
+inline const DataType DataType::INT = DataType(0, 0, 0);
+inline const DataType DataType::INT_REF = DataType(0, 0, 1);
 
 struct assembly {
 	std::vector<std::string> lines;
@@ -122,7 +122,7 @@ struct VariableDeclarationLine : BlockItem {
 
 struct Function : ASTNode {
 	std::string name;
-	std::vector<std::string> params;
+	std::vector<std::pair<std::string, DataType>> params;
 	CodeBlock* lines;
 	virtual void generateAssembly(assembly& ass) override;
 };
@@ -235,9 +235,8 @@ struct TernaryExpression : Expression {
 };
 
 struct VariableRef : Expression {
-	VariableRef(std::string name, DataType var_type) : Expression(ExpressionType::VariableRef, var_type),
+	VariableRef(std::string name) : Expression(ExpressionType::VariableRef, DataType::INT),
 		name(name) {
-		return_type.reference = true;
 	};
 	std::string name;
 	virtual void generateAssembly(assembly& ass) override;
