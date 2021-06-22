@@ -496,7 +496,19 @@ struct scope {
 
 scope* curr_scope;
 
+struct function {
+	std::string name;
+	unsigned int params;
+	bool operator<(const function& other) const {
+		if (name < other.name) return true;
+		if (name > other.name) return false;
+		if (params < other.params) return true;
+		if (params > other.params) return false;
+		return false;
+	}
+};
 
+std::map<function, bool> functions;
 
 void Application::generateAssembly(assembly& ass)
 {
@@ -516,6 +528,8 @@ void CodeBlock::generateAssembly(assembly& ass) {
 
 void Function::generateAssembly(assembly& ass)
 {
+	functions.insert({ { name, params.size() }, lines!=nullptr });
+	if (lines == nullptr) return;
 	curr_scope = new scope();
 	curr_scope->current_variable_location = -8;
 	ass.add(".globl " + name);
@@ -840,6 +854,7 @@ void Continue::generateAssembly(assembly& ass) {
 }
 
 void FunctionCall::generateAssembly(assembly& ass) {
+	if (functions.find({ name, params.size() }) == functions.end()) return; //function does not exist
 	ass.add("\tsubq $" + std::to_string(std::max(32u, 8 * params.size())) + ", %rsp");
 	for (auto it = params.begin(); it != params.end(); it++) {
 		(*it)->generateAssembly(ass);
