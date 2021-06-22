@@ -446,7 +446,7 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 BlockItem* compile_block_item(std::queue<token>& tokens) {
 	token t = tokens.front();
 	if (t.type == INT_KEYWORD) {
-		check_token(tokens, INT_KEYWORD);
+		DataType d = getDataType(tokens);
 		std::string name = check_token(tokens, NAME).value;
 		Expression* exp = nullptr;
 		if (tokens.front().type == EQUAL_SIGN) {
@@ -454,7 +454,7 @@ BlockItem* compile_block_item(std::queue<token>& tokens) {
 			exp = compile_17(tokens);
 		}
 		check_token(tokens, SEMICOLON);
-		return new VariableDeclarationLine(exp, DataType::INT, name);
+		return new VariableDeclarationLine(exp, d, name);
 	}
 	else return compile_line(tokens);
 }
@@ -727,6 +727,11 @@ void VariableDeclarationLine::generateAssembly(assembly& ass)
 	}
 	else {
 		init_exp->generateAssembly(ass);
+		int ref = init_exp->return_type.reference;
+		while (ref > var_type.reference) {
+			ass.add("\tmovl (%eax), %eax");
+			ref--;
+		}
 	}
 	curr_scope->variables.insert({ name, {name, curr_scope->current_variable_location, var_type} });
 	curr_scope->current_variable_location -= 8;
