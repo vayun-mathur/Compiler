@@ -9,7 +9,7 @@ enum class LineType {
 	Return, Expression, VariableDeclaration, If, Block, For, While, DoWhile, Break, Continue
 };
 enum class ExpressionType {
-	BinaryOperator, ConstantInt, VariableRef, UnaryOperator, Ternary
+	BinaryOperator, ConstantInt, VariableRef, UnaryOperator, Ternary, FunctionCall
 };
 
 class DataType {
@@ -122,7 +122,15 @@ struct VariableDeclarationLine : BlockItem {
 
 struct Function : ASTNode {
 	std::string name;
+	std::vector<std::string> params;
 	CodeBlock* lines;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct FunctionCall : Expression {
+	std::string name;
+	std::vector<Expression*> params;
+	FunctionCall(std::string name, DataType return_type) : Expression(ExpressionType::FunctionCall, return_type), name(name) {}
 	virtual void generateAssembly(assembly& ass) override;
 };
 

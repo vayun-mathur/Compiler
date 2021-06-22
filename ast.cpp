@@ -24,6 +24,8 @@ inline UnaryOperator* create_unary_operator(Expression* exp1, unary_operator op)
 
 // the functions with names compile_ followed by a number are named by the order of precedence of their operators
 // according to https://en.cppreference.com/w/cpp/language/operator_precedence
+Expression* compile_17(std::queue<token>& tokens);
+Expression* compile_16(std::queue<token>& tokens);
 
 Expression* compile_0(std::queue<token>& tokens) {
 	if (tokens.front().type == INT_VALUE) {
@@ -45,14 +47,25 @@ Expression* compile_0(std::queue<token>& tokens) {
 // ->
 Expression* compile_2(std::queue<token>& tokens) {
 	Expression* exp = compile_0(tokens);
-	while (tokens.front().type == INCREMENT || tokens.front().type == DECREMENT) {
+	while (tokens.front().type == INCREMENT || tokens.front().type == DECREMENT || tokens.front().type == OPEN_PARENTHESES) {
 		token t = tokens.front();
 		tokens.pop();
 		if (t.type == INCREMENT) {
 			exp = create_unary_operator(exp, postfix_increment);
 		}
-		else {
+		else if(t.type == DECREMENT) {
 			exp = create_unary_operator(exp, postfix_decrement);
+		}
+		else {
+			exp = new FunctionCall(((VariableRef*)exp)->name, DataType::INT);
+			if (tokens.front().type != CLOSE_PARENTHESES) {
+				((FunctionCall*)exp)->params.push_back(compile_16(tokens));
+				while (tokens.front().type != CLOSE_PARENTHESES) {
+					check_token(tokens, COMMA);
+					((FunctionCall*)exp)->params.push_back(compile_16(tokens));
+				}
+			}
+			tokens.pop();
 		}
 	}
 	return exp;
@@ -244,7 +257,6 @@ Expression* compile_15(std::queue<token>& tokens) {
 // a?b:c
 // throw _
 // co_yield _
-Expression* compile_17(std::queue<token>& tokens);
 Expression* compile_16(std::queue<token>& tokens) {
 	Expression* exp = compile_15(tokens);
 	if (tokens.front().type == QUESTION_MARK) {
@@ -318,6 +330,7 @@ Expression* compile_17(std::queue<token>& tokens) {
 	while (tokens.front().type == COMMA) {
 		tokens.pop();
 		exp = compile_16(tokens);
+		//TODO: EVALUATE BOTH
 	}
 	return exp;
 }
@@ -439,8 +452,20 @@ Function* compile_function(std::queue<token>& tokens)
 	check_token(tokens, INT_KEYWORD);
 	f->name = check_token(tokens, NAME).value;
 	check_token(tokens, OPEN_PARENTHESES);
+	if (tokens.front().type == INT_KEYWORD) {
+		tokens.pop();
+		std::string name = check_token(tokens, NAME).value;
+		f->params.push_back(name);
+		while (tokens.front().type == COMMA) {
+			tokens.pop();
+			check_token(tokens, INT_KEYWORD);
+			std::string name = check_token(tokens, NAME).value;
+			f->params.push_back(name);
+		}
+	}
 	check_token(tokens, CLOSE_PARENTHESES);
-	f->lines = compile_code_block(tokens);
+	if (tokens.front().type == SEMICOLON) tokens.pop();
+	else f->lines = compile_code_block(tokens);
 	return f;
 }
 Application* compile_application(std::queue<token>& tokens)
@@ -493,10 +518,13 @@ void Function::generateAssembly(assembly& ass)
 {
 	curr_scope = new scope();
 	curr_scope->current_variable_location = -8;
-	ass.add(".globl	main");
+	ass.add(".globl " + name);
 	ass.add(name + ":");
 	ass.add("\tpush %rbp");
 	ass.add("\tmovq %rsp, %rbp");
+	for (int i = 0; i < params.size(); i++) {
+		curr_scope->variables.insert({ params[i], {params[i], 8 * (i+2)} });
+	}
 	lines->generateAssembly(ass);
 }
 
@@ -809,4 +837,21 @@ void Continue::generateAssembly(assembly& ass) {
 	if (curr_loop_scope->type == LineType::For) {
 		ass.add("\tjmp _for_continue_" + std::to_string(curr_loop_scope->id));
 	}
+}
+
+void FunctionCall::generateAssembly(assembly& ass) {
+	ass.add("\tsubq $" + std::to_string(std::max(32u, 8 * params.size())) + ", %rsp");
+	for (auto it = params.begin(); it != params.end(); it++) {
+		(*it)->generateAssembly(ass);
+		if ((*it)->return_type == DataType::INT_REF) {
+			ass.add("\tmovl (%eax), %eax");
+		}
+		ass.add("\tmovq %rax, " + std::to_string(8 * (it - params.begin())) + "(%rsp)");
+	}
+	if(params.size() > 0) ass.add("\tmovq 0(%rsp), %rcx");
+	if (params.size() > 1) ass.add("\tmovq 8(%rsp), %rdx");
+	if (params.size() > 2) ass.add("\tmovq 16(%rsp), %r8");
+	if (params.size() > 3) ass.add("\tmovq 24(%rsp), %r9");
+	ass.add("\tcall " + name);
+	ass.add("\taddq $" + std::to_string(std::max(32u, 8 * params.size())) + ", %rsp");
 }
