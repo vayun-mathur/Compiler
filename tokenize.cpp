@@ -15,6 +15,9 @@ struct token_data {
 };
 
 token_data token_regex[] = {
+    {LONG_KEYWORD, R"(long)"},
+    {CHAR_KEYWORD, R"(char)"},
+    {SHORT_KEYWORD, R"(short)"},
     {INT_KEYWORD, R"(int)"},
     {RETURN_KEYWORD, R"(return)"},
     {SEMICOLON, R"(;)"},
@@ -79,7 +82,9 @@ token_data token_regex[] = {
 
     {OPEN_BRACES, R"(\{)"},
     {CLOSE_BRACES, R"(\})"},
-
+    {CHAR_VALUE, R"('(.|\\n)')"},
+    {SHORT_VALUE, R"([0-9]+[sS])"},
+    {LONG_VALUE, R"([0-9]+[lL])"},
     {INT_VALUE, R"([0-9]+)"},
     {NAME, R"([a-zA-Z_$][a-zA-Z_$0-9]*)"}
 };

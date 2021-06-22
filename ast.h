@@ -2,6 +2,7 @@
 #include <vector>
 #include <queue>
 #include "tokenize.h"
+#include "register.h"
 
 void initAST();
 
@@ -16,6 +17,12 @@ class DataType {
 public:
 	static const DataType INT;
 	static const DataType INT_REF;
+	static const DataType CHAR;
+	static const DataType CHAR_REF;
+	static const DataType SHORT;
+	static const DataType SHORT_REF;
+	static const DataType LONG;
+	static const DataType LONG_REF;
 	int id;
 	int pointers;
 	int reference;
@@ -44,8 +51,14 @@ public:
 	}
 };
 
-inline const DataType DataType::INT = DataType(0, 0, 0);
-inline const DataType DataType::INT_REF = DataType(0, 0, 1);
+inline const DataType DataType::CHAR = DataType(1, 0, 0);
+inline const DataType DataType::CHAR_REF = DataType(1, 0, 1);
+inline const DataType DataType::SHORT = DataType(2, 0, 0);
+inline const DataType DataType::SHORT_REF = DataType(2, 0, 1);
+inline const DataType DataType::INT = DataType(3, 0, 0);
+inline const DataType DataType::INT_REF = DataType(3, 0, 1);
+inline const DataType DataType::LONG = DataType(4, 0, 0);
+inline const DataType DataType::LONG_REF = DataType(4, 0, 1);
 
 struct assembly {
 	std::vector<std::string> lines;
@@ -58,6 +71,58 @@ struct assembly {
 	}
 
 	void add(std::string s) { lines.push_back(s); }
+
+	assembly& add(std::string instruction, size s, reg dst, bool index = false) {
+		lines.push_back("\t" + instruction + _suffix(s) + (index ? " (%" + _register(dst, s) + ")" : " %" + _register(dst, s)));
+		return *this;
+	}
+
+	assembly& convert(size s1, size s2, reg r) {
+		/*
+		switch (s1) {
+		case i8:
+			switch (s2) {
+			case i8:
+			case i16:
+			case i32:
+			case i64:
+			}
+		case i16:
+			switch (s2) {
+			case i8:
+			case i16:
+			case i32:
+			case i64:
+			}
+		case i32:
+			switch (s2) {
+			case i8:
+			case i16:
+			case i32:
+			case i64:
+			}
+		case i64:
+			switch (s2) {
+			case i8:
+			case i16:
+			case i32:
+			case i64:
+			}
+		}*/
+		return *this;
+	}
+
+	assembly& add(std::string instruction, size s, reg src, reg dst, bool src_index=false, bool dst_index=false) {
+		lines.push_back("\t"+instruction + _suffix(s) +
+			(src_index ? " (%" + _register(src, s) + ")" : " %" + _register(src, s)) +
+			(dst_index ? ", (%" + _register(dst, s) + ")" : ", %" + _register(dst, s)));
+		return *this;
+	}
+
+	assembly& add(std::string instruction, size s, int src, reg dst) {
+		lines.push_back("\t" + instruction + _suffix(s) + " $" + std::to_string(src) + ", %" + _register(dst, s));
+		return *this;
+	}
 
 	void add(const assembly& other) {
 		for (std::string l : other.lines) {
@@ -242,9 +307,27 @@ struct VariableRef : Expression {
 	virtual void generateAssembly(assembly& ass) override;
 };
 
+struct ConstantChar : Expression {
+	ConstantChar(char val) : Expression(ExpressionType::ConstantInt, DataType::CHAR), val(val) { };
+	char val;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct ConstantShort : Expression {
+	ConstantShort(short val) : Expression(ExpressionType::ConstantInt, DataType::SHORT), val(val) { };
+	short val;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
 struct ConstantInt : Expression {
 	ConstantInt(int val) : Expression(ExpressionType::ConstantInt, DataType::INT), val(val) { };
 	int val;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct ConstantLong : Expression {
+	ConstantLong(long long val) : Expression(ExpressionType::ConstantInt, DataType::LONG), val(val) { };
+	long long val;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
