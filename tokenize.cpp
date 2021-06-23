@@ -80,6 +80,8 @@ token_data token_regex[] = {
 
     {COMMA, R"(,)"},
 
+    {OPEN_BRACKET, R"(\[)"},
+    {CLOSE_BRACKET, R"(\])"},
     {OPEN_BRACES, R"(\{)"},
     {CLOSE_BRACES, R"(\})"},
     {CHAR_VALUE, R"('(.|\\n)')"},

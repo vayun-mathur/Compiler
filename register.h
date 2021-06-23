@@ -9,6 +9,15 @@ enum size {
 	i8, i16, i32, i64
 };
 
+inline int _bytes(size s) {
+	switch (s) {
+	case i8: return 1;
+	case i16: return 2;
+	case i32: return 4;
+	case i64: return 8;
+	}
+}
+
 inline std::string _suffix(size s) {
 	switch (s) {
 	case i8: return "b";

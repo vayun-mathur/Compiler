@@ -17,48 +17,52 @@ class DataType {
 public:
 	static const DataType INT;
 	static const DataType INT_REF;
+	static const DataType INT_PTR;
 	static const DataType CHAR;
 	static const DataType CHAR_REF;
+	static const DataType CHAR_PTR;
 	static const DataType SHORT;
 	static const DataType SHORT_REF;
+	static const DataType SHORT_PTR;
 	static const DataType LONG;
 	static const DataType LONG_REF;
+	static const DataType LONG_PTR;
 	int id;
 	int pointers;
-	int reference;
+	bool lvalue;
 	DataType()
-		: id(0), pointers(0), reference(0) {
+		: id(0), pointers(0), lvalue(false) {
 
 	}
 	DataType(const DataType& other)
-		: id(other.id), pointers(other.pointers), reference(other.reference) {
+		: id(other.id), pointers(other.pointers), lvalue(other.lvalue) {
 
 	}
-	DataType(int id, int pointers, int reference)
-		: id(id), pointers(pointers), reference(reference) {
+	DataType(int id, int pointers, bool lvalue)
+		: id(id), pointers(pointers), lvalue(lvalue) {
 
 	}
 	bool operator==(const DataType& other) {
-		return id == other.id && pointers == other.pointers && reference == other.reference;
+		return id == other.id && pointers == other.pointers && lvalue == other.lvalue;
 	}
 	bool operator<(const DataType& other) const {
 		if (id < other.id) return true;
 		if (id > other.id) return false;
 		if (pointers < other.pointers) return true;
 		if (pointers > other.pointers) return false;
-		if (reference < other.reference) return true;
+		if (lvalue < other.lvalue) return true;
 		return false;
 	}
 };
 
-inline const DataType DataType::CHAR = DataType(1, 0, 0);
-inline const DataType DataType::CHAR_REF = DataType(1, 0, 1);
-inline const DataType DataType::SHORT = DataType(2, 0, 0);
-inline const DataType DataType::SHORT_REF = DataType(2, 0, 1);
-inline const DataType DataType::INT = DataType(3, 0, 0);
-inline const DataType DataType::INT_REF = DataType(3, 0, 1);
-inline const DataType DataType::LONG = DataType(4, 0, 0);
-inline const DataType DataType::LONG_REF = DataType(4, 0, 1);
+inline const DataType DataType::CHAR = DataType(1, 0, false);
+inline const DataType DataType::CHAR_PTR = DataType(1, 1, false);
+inline const DataType DataType::SHORT = DataType(2, 0, false);
+inline const DataType DataType::SHORT_PTR = DataType(2, 1, false);
+inline const DataType DataType::INT = DataType(3, 0, false);
+inline const DataType DataType::INT_PTR = DataType(3, 1, false);
+inline const DataType DataType::LONG = DataType(4, 0, false);
+inline const DataType DataType::LONG_PTR = DataType(4, 1, false);
 
 struct assembly {
 	std::vector<std::string> lines;
@@ -70,7 +74,10 @@ struct assembly {
 		for (std::string s : l) add(s);
 	}
 
-	void add(std::string s) { lines.push_back(s); }
+	assembly& add(std::string s) {
+		lines.push_back(s);
+		return *this;
+	}
 
 	assembly& add(std::string instruction, size s, reg dst, bool index = false) {
 		lines.push_back("\t" + instruction + _suffix(s) + (index ? " (%" + _register(dst, s) + ")" : " %" + _register(dst, s)));
@@ -112,8 +119,8 @@ struct assembly {
 		return *this;
 	}
 
-	assembly& add(std::string instruction, size s, reg src, reg dst, bool src_index=false, bool dst_index=false) {
-		lines.push_back("\t"+instruction + _suffix(s) +
+	assembly& add(std::string instruction, size s, reg src, reg dst, bool src_index = false, bool dst_index = false) {
+		lines.push_back("\t" + instruction + _suffix(s) +
 			(src_index ? " (%" + _register(src, s) + ")" : " %" + _register(src, s)) +
 			(dst_index ? ", (%" + _register(dst, s) + ")" : ", %" + _register(dst, s)));
 		return *this;
@@ -213,7 +220,7 @@ struct Return : LineOfCode {
 struct IfStatement : LineOfCode {
 	Expression* condition;
 	LineOfCode* if_cond, * else_cond;
-	IfStatement(Expression* condition, LineOfCode* if_cond, LineOfCode* else_cond) : LineOfCode(LineType::If), 
+	IfStatement(Expression* condition, LineOfCode* if_cond, LineOfCode* else_cond) : LineOfCode(LineType::If),
 		condition(condition), if_cond(if_cond), else_cond(else_cond) { };
 
 	virtual void generateAssembly(assembly& ass) override;
@@ -280,7 +287,8 @@ struct BinaryOperator : Expression {
 enum unary_operator {
 	negation, bitwise_complement, logical_negation,
 	prefix_increment, prefix_decrement,
-	postfix_increment, postfix_decrement
+	postfix_increment, postfix_decrement,
+	address, dereference
 };
 
 struct UnaryOperator : Expression {

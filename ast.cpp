@@ -22,10 +22,9 @@ DataType getDataType(std::queue<token>& tokens) {
 	if (t.type == CHAR_KEYWORD) d = DataType::CHAR;
 	if (t.type == SHORT_KEYWORD) d = DataType::SHORT;
 	if (t.type == LONG_KEYWORD) d = DataType::LONG;
-	d.pointers = 0;
-	while (tokens.front().type == BITWISE_AND) {
+	while (tokens.front().type == ASTERISK) {
 		tokens.pop();
-		d.reference++;
+		d.pointers++;
 	}
 	return d;
 }
@@ -76,13 +75,12 @@ Expression* compile_0(std::queue<token>& tokens) {
 
 // type()
 // type{}
-// a()
-// a[]
 // .
 // ->
 Expression* compile_2(std::queue<token>& tokens) {
 	Expression* exp = compile_0(tokens);
-	while (tokens.front().type == INCREMENT || tokens.front().type == DECREMENT || tokens.front().type == OPEN_PARENTHESES) {
+	while (tokens.front().type == INCREMENT || tokens.front().type == DECREMENT || tokens.front().type == OPEN_PARENTHESES
+		|| tokens.front().type == OPEN_BRACKET) {
 		token t = tokens.front();
 		tokens.pop();
 		if (t.type == INCREMENT) {
@@ -90,6 +88,12 @@ Expression* compile_2(std::queue<token>& tokens) {
 		}
 		else if (t.type == DECREMENT) {
 			exp = create_unary_operator(exp, postfix_decrement);
+		}
+		else if (t.type == OPEN_BRACKET) {
+			Expression* exp2 = compile_17(tokens);
+			check_token(tokens, CLOSE_BRACKET);
+			exp = create_binary_operator(exp, exp2, add);
+			exp = create_unary_operator(exp, dereference);
 		}
 		else {
 			exp = new FunctionCall(((VariableRef*)exp)->name, DataType::INT);
@@ -108,8 +112,6 @@ Expression* compile_2(std::queue<token>& tokens) {
 
 // +_
 // (type)_
-// *_
-// &_
 // sizeof _
 // new
 // new[]
@@ -117,7 +119,8 @@ Expression* compile_2(std::queue<token>& tokens) {
 // delete[]
 Expression* compile_3(std::queue<token>& tokens) {
 	if (tokens.front().type == MINUS || tokens.front().type == BITWISE_COMPLEMENT || tokens.front().type == EXCLAMATION
-		|| tokens.front().type == INCREMENT || tokens.front().type == DECREMENT) {
+		|| tokens.front().type == INCREMENT || tokens.front().type == DECREMENT || tokens.front().type == BITWISE_AND
+		|| tokens.front().type == ASTERISK) {
 		token t = tokens.front();
 		tokens.pop();
 		Expression* exp = compile_3(tokens);
@@ -132,6 +135,12 @@ Expression* compile_3(std::queue<token>& tokens) {
 		}
 		else if (t.type == DECREMENT) {
 			exp = create_unary_operator(exp, prefix_decrement);
+		}
+		else if (t.type == BITWISE_AND) {
+			exp = create_unary_operator(exp, address);
+		}
+		else if (t.type == ASTERISK) {
+			exp = create_unary_operator(exp, dereference);
 		}
 		else {
 			exp = create_unary_operator(exp, logical_negation);
@@ -580,7 +589,7 @@ void Function::generateAssembly(assembly& ass)
 void Return::generateAssembly(assembly& ass)
 {
 	expr->generateAssembly(ass);
-	if (expr->return_type.reference) {
+	if (expr->return_type.lvalue) {
 		ass.add("\tmovq (%rax), %rax");
 	}
 	ass.add("\tmovq %rbp, %rsp");
@@ -601,124 +610,139 @@ void addUnaryOperator(DataType type1, unary_operator op, DataType return_type, a
 void initAST() {
 
 	size sizes[] = { i8, i16, i32, i64 };
-	DataType non_ref[] = { DataType::CHAR, DataType::SHORT, DataType::INT, DataType::LONG };
-	DataType ref[] = { DataType::CHAR_REF, DataType::SHORT_REF, DataType::INT_REF, DataType::LONG_REF };
+	DataType normal[] = { DataType::CHAR, DataType::SHORT, DataType::INT, DataType::LONG };
+	DataType lvalue[] = { DataType::CHAR, DataType::SHORT, DataType::INT, DataType::LONG };
+	for (int i = 0; i < 4; i++) {
+		lvalue[i].lvalue = true;
+	}
+	DataType pointer[] = { DataType::CHAR_PTR, DataType::SHORT_PTR, DataType::INT_PTR, DataType::LONG_PTR };
 
 	for (int i = 0; i < 4; i++) {
-		addBinaryOperator(non_ref[i], add, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], add, normal[i], normal[i],
 			assembly().add("add", sizes[i], rcx, rax));
-		addBinaryOperator(non_ref[i], subtract, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], subtract, normal[i], normal[i],
 			assembly().add("sub", sizes[i], rcx, rax));
-		addBinaryOperator(non_ref[i], multiply, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], multiply, normal[i], normal[i],
 			assembly().add("imul", sizes[i], rcx, rax));
-		addBinaryOperator(non_ref[i], divide, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], divide, normal[i], normal[i],
 			assembly().add("mov", sizes[i], 0, rdx).add("idiv", sizes[i], rcx));
-		addBinaryOperator(non_ref[i], mod, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], mod, normal[i], normal[i],
 			assembly().add("mov", sizes[i], 0, rdx).add("idiv", sizes[i], rcx).add("mov", sizes[i], rdx, rax));
 
-		addBinaryOperator(non_ref[i], equal, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], equal, normal[i], normal[i],
 			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("sete", i8, rax));
-		addBinaryOperator(non_ref[i], not_equal, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], not_equal, normal[i], normal[i],
 			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setne", i8, rax));
-		addBinaryOperator(non_ref[i], less, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], less, normal[i], normal[i],
 			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setl", i8, rax));
-		addBinaryOperator(non_ref[i], greater, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], greater, normal[i], normal[i],
 			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setg", i8, rax));
-		addBinaryOperator(non_ref[i], less_equal, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], less_equal, normal[i], normal[i],
 			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setle", i8, rax));
-		addBinaryOperator(non_ref[i], greater_equal, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], greater_equal, normal[i], normal[i],
 			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setge", i8, rax));
 
-		addBinaryOperator(non_ref[i], left_shift, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], left_shift, normal[i], normal[i],
 			assembly({ "\tsal" + _suffix(sizes[i]) + " %cl, %" + _register(rax, sizes[i]) }));
-		addBinaryOperator(non_ref[i], right_shift, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], right_shift, normal[i], normal[i],
 			assembly({ "\tsar" + _suffix(sizes[i]) + " %cl, %" + _register(rax, sizes[i]) }));
 
-		addBinaryOperator(non_ref[i], bitwise_xor, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], bitwise_xor, normal[i], normal[i],
 			assembly().add("xor", sizes[i], rcx, rax));
-		addBinaryOperator(non_ref[i], bitwise_or, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], bitwise_or, normal[i], normal[i],
 			assembly().add("or", sizes[i], rcx, rax));
-		addBinaryOperator(non_ref[i], bitwise_and, non_ref[i], non_ref[i],
+		addBinaryOperator(normal[i], bitwise_and, normal[i], normal[i],
 			assembly().add("and", sizes[i], rcx, rax));
 	}
 
 	for (int i = 0; i < 4; i++) {
-		addBinaryOperator(ref[i], assignment, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], assignment, normal[i], lvalue[i],
 			assembly().add("mov", sizes[i], rcx, rax, false, true));
-		addBinaryOperator(ref[i], add_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], add_assign, normal[i], lvalue[i],
 			assembly().add("add", sizes[i], rcx, rax, false, true));
-		addBinaryOperator(ref[i], subtract_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], subtract_assign, normal[i], lvalue[i],
 			assembly().add("sub", sizes[i], rcx, rax, false, true));
-		addBinaryOperator(ref[i], multiply_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], multiply_assign, normal[i], lvalue[i],
 			assembly().add("imul", sizes[i], rcx, rax, false, true));
-		addBinaryOperator(ref[i], divide_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], divide_assign, normal[i], lvalue[i],
 			assembly().add("mov", sizes[i], rax, r9).add("mov", sizes[i], 0, rdx).add("idiv", sizes[i], rcx)
 			.add("mov", sizes[i], rax, r9, false, true).add("mov", sizes[i], r9, rax));
-		addBinaryOperator(ref[i], mod_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], mod_assign, normal[i], lvalue[i],
 			assembly().add("mov", sizes[i], rax, r9).add("mov", sizes[i], 0, rdx).add("idiv", sizes[i], rcx)
 			.add("mov", sizes[i], rdx, r9, false, true).add("mov", sizes[i], r9, rax));
 
-		addBinaryOperator(ref[i], left_shift_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], left_shift_assign, normal[i], lvalue[i],
 			assembly({ "\tsal" + _suffix(sizes[i]) + " %cl, (%" + _register(rax, sizes[i]) + ")" }));
-		addBinaryOperator(ref[i], right_shift_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], right_shift_assign, normal[i], lvalue[i],
 			assembly({ "\tsar" + _suffix(sizes[i]) + " %cl, (%" + _register(rax, sizes[i]) + ")" }));
 
-		addBinaryOperator(ref[i], xor_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], xor_assign, normal[i], lvalue[i],
 			assembly().add("xor", sizes[i], rcx, rax, false, true));
-		addBinaryOperator(ref[i], or_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], or_assign, normal[i], lvalue[i],
 			assembly().add("or", sizes[i], rcx, rax, false, true));
-		addBinaryOperator(ref[i], and_assign, non_ref[i], ref[i],
+		addBinaryOperator(lvalue[i], and_assign, normal[i], lvalue[i],
 			assembly().add("and", sizes[i], rcx, rax, false, true));
 	}
 
 	for (int i = 0; i < 4; i++) {
-		addUnaryOperator(non_ref[i], negation, non_ref[i],
+		addUnaryOperator(normal[i], negation, normal[i],
 			assembly().add("neg", sizes[i], rax));
-		addUnaryOperator(non_ref[i], bitwise_complement, non_ref[i],
+		addUnaryOperator(normal[i], bitwise_complement, normal[i],
 			assembly().add("not", sizes[i], rax));
-		addUnaryOperator(non_ref[i], logical_negation, non_ref[i],
+		addUnaryOperator(normal[i], logical_negation, normal[i],
 			assembly().add("cmp", sizes[i], 0, rax).add("mov", sizes[i], 0, rax).add("sete", i8, rax));
 
-		addUnaryOperator(ref[i], prefix_increment, ref[i],
+		addUnaryOperator(lvalue[i], prefix_increment, lvalue[i],
 			assembly().add("inc", sizes[i], rax, true));
-		addUnaryOperator(ref[i], prefix_decrement, ref[i],
+		addUnaryOperator(lvalue[i], prefix_decrement, lvalue[i],
 			assembly().add("dec", sizes[i], rax, true));
 
-		addUnaryOperator(ref[i], postfix_increment, non_ref[i],
+		addUnaryOperator(lvalue[i], postfix_increment, normal[i],
 			assembly().add("mov", sizes[i], rax, rcx, true).add("inc", sizes[i], rax, true).add("mov", sizes[i], rcx, rax));
-		addUnaryOperator(ref[i], postfix_decrement, non_ref[i],
+		addUnaryOperator(lvalue[i], postfix_decrement, normal[i],
 			assembly().add("mov", sizes[i], rax, rcx, true).add("dec", sizes[i], rax, true).add("mov", sizes[i], rcx, rax));
+	}
+	for (int i = 0; i < 4; i++) {
+		addUnaryOperator(lvalue[i], address, pointer[i], assembly());
+		addUnaryOperator(pointer[i], dereference, lvalue[i], assembly());
+	}
+	for (int i = 0; i < 4; i++) {
+		addBinaryOperator(pointer[i], add, normal[i], pointer[i],
+			assembly().add("imul", i64, _bytes(sizes[i]), rcx).add("add", i64, rcx, rax));
 	}
 }
 
 void BinaryOperator::generateAssembly(assembly& ass)
 {
 	static int logical_operator_clause = 0;
-	if (op == logical_or) {
-		int logical_operator_cl = logical_operator_clause++;
-		right->generateAssembly(ass);
-		ass.add("\tcmpl $0, %eax");
-		ass.add("\tje _loc" + std::to_string(logical_operator_cl));
-		ass.add("\tmovl $1, %eax");
-		ass.add("jmp _loc_end" + std::to_string(logical_operator_cl));
-		ass.add("_loc" + std::to_string(logical_operator_cl) + ":");
-		ass.add("\tcmpl $0, %eax");
-		ass.add("\tmovl $0, %eax");
-		ass.add("\tsetne %al");
-		ass.add("_loc_end" + std::to_string(logical_operator_cl) + ":");
-		return;
-	}
-	else if (op == logical_and) {
-		int logical_operator_cl = logical_operator_clause++;
-		ass.add("\tcmpl $0, %eax");
-		ass.add("\tjne _loc" + std::to_string(logical_operator_cl));
-		ass.add("jmp _loc_end" + std::to_string(logical_operator_cl));
-		ass.add("_loc" + std::to_string(logical_operator_cl) + ":");
-		ass.add("\tcmpl $0, %eax");
-		ass.add("\tmovl $0, %eax");
-		ass.add("\tsetne %al");
-		ass.add("_loc_end" + std::to_string(logical_operator_cl) + ":");
-		return;
+
+	if (left->return_type.id <= 4 && right->return_type.id <= 4) {
+		if (op == logical_or) {
+			int logical_operator_cl = logical_operator_clause++;
+			right->generateAssembly(ass);
+			ass.add("\tcmpl $0, %eax");
+			ass.add("\tje _loc" + std::to_string(logical_operator_cl));
+			ass.add("\tmovl $1, %eax");
+			ass.add("jmp _loc_end" + std::to_string(logical_operator_cl));
+			ass.add("_loc" + std::to_string(logical_operator_cl) + ":");
+			ass.add("\tcmpl $0, %eax");
+			ass.add("\tmovl $0, %eax");
+			ass.add("\tsetne %al");
+			ass.add("_loc_end" + std::to_string(logical_operator_cl) + ":");
+			return;
+		}
+		else if (op == logical_and) {
+			int logical_operator_cl = logical_operator_clause++;
+			ass.add("\tcmpl $0, %eax");
+			ass.add("\tjne _loc" + std::to_string(logical_operator_cl));
+			ass.add("jmp _loc_end" + std::to_string(logical_operator_cl));
+			ass.add("_loc" + std::to_string(logical_operator_cl) + ":");
+			ass.add("\tcmpl $0, %eax");
+			ass.add("\tmovl $0, %eax");
+			ass.add("\tsetne %al");
+			ass.add("_loc_end" + std::to_string(logical_operator_cl) + ":");
+			return;
+		}
 	}
 
 	right->generateAssembly(ass);
@@ -729,22 +753,29 @@ void BinaryOperator::generateAssembly(assembly& ass)
 	DataType l = left->return_type;
 	DataType r = right->return_type;
 
-	while (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && r.reference) {
-		r.reference--;
+	if (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && r.lvalue) {
+		r.lvalue = false;
 		ass.add("\tmovq (%rcx), %rcx");
 	}
-	while (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && l.reference) {
-		l.reference--;
+	if (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && l.lvalue) {
+		l.lvalue = false;
 		ass.add("\tmovq (%rax), %rax");
 	}
 
 	ass.add(binary_operator_assembly[{l, op, r}]);
+	return_type = binary_operator_result_type[{ l, op, r }];
 }
 
 void UnaryOperator::generateAssembly(assembly& ass)
 {
 	left->generateAssembly(ass);
-	ass.add(unary_operator_assembly[{left->return_type, op}]);
+	DataType l = left->return_type;
+	if (unary_operator_assembly.find({l, op}) == unary_operator_assembly.end() && l.lvalue) {
+		l.lvalue=false;
+		ass.add("\tmovq (%rax), %rax");
+	}
+	ass.add(unary_operator_assembly[{l, op}]);
+	return_type = unary_operator_result_type[{l, op}];
 }
 
 void ConstantInt::generateAssembly(assembly& ass)
@@ -780,11 +811,6 @@ void VariableDeclarationLine::generateAssembly(assembly& ass)
 	}
 	else {
 		init_exp->generateAssembly(ass);
-		int ref = init_exp->return_type.reference;
-		while (ref > var_type.reference) {
-			ass.add("\tmovq (%rax), %rax");
-			ref--;
-		}
 	}
 	curr_scope->variables.insert({ name, {name, curr_scope->current_variable_location, var_type} });
 	curr_scope->current_variable_location -= 8;
@@ -799,7 +825,7 @@ void VariableRef::generateAssembly(assembly& ass)
 	}
 	if (sc) {
 		return_type = sc->variables[name].type;
-		return_type.reference++;
+		return_type.lvalue=true;
 		ass.add("\tleaq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
 	}
 	else
@@ -932,8 +958,7 @@ void FunctionCall::generateAssembly(assembly& ass) {
 	ass.add("\tsubq $" + std::to_string(std::max(32u, 8 * params.size())) + ", %rsp");
 	for (int i = 0; i < params.size(); i++) {
 		params[i]->generateAssembly(ass);
-		while (params[i]->return_type.reference > f.params[i].second.reference) {
-			params[i]->return_type.reference--;
+		if (params[i]->return_type.lvalue) {
 			ass.add("\tmovq (%rax), %rax");
 		}
 		ass.add("\tmovq %rax, " + std::to_string(8 * i) + "(%rsp)");
