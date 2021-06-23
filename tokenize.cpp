@@ -56,8 +56,6 @@ token_data token_regex[] = {
     {LEFT_SHIFT, R"(<<)"},
     {RIGHT_SHIFT, R"(>>)"},
 
-    {EXCLAMATION, R"(!)"},
-
     {EQUAL_TO, R"(==)"},
     {NOT_EQUAL_TO, R"(!=)"},
     {GREATER_OR_EQUAL_TO, R"(>=)"},
@@ -65,6 +63,7 @@ token_data token_regex[] = {
     {LESS_OR_EQUAL_TO, R"(<=)"},
     {LESS_THAN, R"(<)"},
 
+    {EXCLAMATION, R"(!)"},
     {EQUAL_SIGN, R"(=)"},
 
     {LOGICAL_AND, R"(&&)"},
@@ -84,6 +83,7 @@ token_data token_regex[] = {
     {CLOSE_BRACKET, R"(\])"},
     {OPEN_BRACES, R"(\{)"},
     {CLOSE_BRACES, R"(\})"},
+    {STRING_VALUE, R"(\"(.|\\n)*\")"},
     {CHAR_VALUE, R"('(.|\\n)')"},
     {SHORT_VALUE, R"([0-9]+[sS])"},
     {LONG_VALUE, R"([0-9]+[lL])"},

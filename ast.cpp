@@ -55,6 +55,20 @@ Expression* compile_0(std::queue<token>& tokens) {
 		if (s == "\\f") return new ConstantChar('\f');
 		return new ConstantChar(s[0]);
 	}
+	else if (tokens.front().type == STRING_VALUE) {
+		std::string s = check_token(tokens, STRING_VALUE).value;
+		s = s.substr(1, s.length() - 2);
+		std::string s2 = s;
+		size_t off = 0;
+		while ((off = s2.find('\\', off)) != std::string::npos) {
+			s2.erase(s2.begin() + off);
+			if (s2[off] == 'n') s2[off] = '\n';
+			if (s2[off] == 't') s2[off] = '\t';
+			if (s2[off] == 'r') s2[off] = '\r';
+			if (s2[off] == 'f') s2[off] = '\f';
+		}
+		return new ConstantString(s2);
+	}
 	else if (tokens.front().type == SHORT_VALUE) {
 		std::string s = check_token(tokens, SHORT_VALUE).value;
 		s.substr(0, s.length() - 1);
@@ -110,7 +124,6 @@ Expression* compile_2(std::queue<token>& tokens) {
 	return exp;
 }
 
-// +_
 // (type)_
 // sizeof _
 // new
@@ -118,7 +131,7 @@ Expression* compile_2(std::queue<token>& tokens) {
 // delete
 // delete[]
 Expression* compile_3(std::queue<token>& tokens) {
-	if (tokens.front().type == MINUS || tokens.front().type == BITWISE_COMPLEMENT || tokens.front().type == EXCLAMATION
+	if (tokens.front().type == MINUS || tokens.front().type == PLUS || tokens.front().type == BITWISE_COMPLEMENT || tokens.front().type == EXCLAMATION
 		|| tokens.front().type == INCREMENT || tokens.front().type == DECREMENT || tokens.front().type == BITWISE_AND
 		|| tokens.front().type == ASTERISK) {
 		token t = tokens.front();
@@ -126,6 +139,9 @@ Expression* compile_3(std::queue<token>& tokens) {
 		Expression* exp = compile_3(tokens);
 		if (t.type == MINUS) {
 			exp = create_unary_operator(exp, negation);
+		}
+		else if (t.type == PLUS) {
+			exp = create_unary_operator(exp, plus);
 		}
 		else if (t.type == BITWISE_COMPLEMENT) {
 			exp = create_unary_operator(exp, bitwise_complement);
@@ -630,17 +646,17 @@ void initAST() {
 			assembly().add("mov", sizes[i], 0, rdx).add("idiv", sizes[i], rcx).add("mov", sizes[i], rdx, rax));
 
 		addBinaryOperator(normal[i], equal, normal[i], normal[i],
-			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("sete", i8, rax));
+			assembly().add("cmp", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("sete", i8, rax));
 		addBinaryOperator(normal[i], not_equal, normal[i], normal[i],
-			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setne", i8, rax));
+			assembly().add("cmp", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setne", i8, rax));
 		addBinaryOperator(normal[i], less, normal[i], normal[i],
-			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setl", i8, rax));
+			assembly().add("cmp", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setl", i8, rax));
 		addBinaryOperator(normal[i], greater, normal[i], normal[i],
-			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setg", i8, rax));
+			assembly().add("cmp", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setg", i8, rax));
 		addBinaryOperator(normal[i], less_equal, normal[i], normal[i],
-			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setle", i8, rax));
+			assembly().add("cmp", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setle", i8, rax));
 		addBinaryOperator(normal[i], greater_equal, normal[i], normal[i],
-			assembly().add("cmpl", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setge", i8, rax));
+			assembly().add("cmp", sizes[i], rcx, rax).add("mov", sizes[i], 0, rax).add("setge", i8, rax));
 
 		addBinaryOperator(normal[i], left_shift, normal[i], normal[i],
 			assembly({ "\tsal" + _suffix(sizes[i]) + " %cl, %" + _register(rax, sizes[i]) }));
@@ -686,6 +702,8 @@ void initAST() {
 
 	for (int i = 0; i < 4; i++) {
 		addUnaryOperator(normal[i], negation, normal[i],
+			assembly());
+		addUnaryOperator(normal[i], negation, normal[i],
 			assembly().add("neg", sizes[i], rax));
 		addUnaryOperator(normal[i], bitwise_complement, normal[i],
 			assembly().add("not", sizes[i], rax));
@@ -707,8 +725,10 @@ void initAST() {
 		addUnaryOperator(pointer[i], dereference, lvalue[i], assembly());
 	}
 	for (int i = 0; i < 4; i++) {
-		addBinaryOperator(pointer[i], add, normal[i], pointer[i],
-			assembly().add("imul", i64, _bytes(sizes[i]), rcx).add("add", i64, rcx, rax));
+		for (int j = 0; j < 4; j++) {
+			addBinaryOperator(pointer[i], add, normal[j], pointer[i],
+				assembly().add("imul", i64, _bytes(sizes[i]), rcx).add("add", i64, rcx, rax));
+		}
 	}
 }
 
@@ -770,8 +790,8 @@ void UnaryOperator::generateAssembly(assembly& ass)
 {
 	left->generateAssembly(ass);
 	DataType l = left->return_type;
-	if (unary_operator_assembly.find({l, op}) == unary_operator_assembly.end() && l.lvalue) {
-		l.lvalue=false;
+	if (unary_operator_assembly.find({ l, op }) == unary_operator_assembly.end() && l.lvalue) {
+		l.lvalue = false;
 		ass.add("\tmovq (%rax), %rax");
 	}
 	ass.add(unary_operator_assembly[{l, op}]);
@@ -798,6 +818,20 @@ void ConstantChar::generateAssembly(assembly& ass)
 	ass.add("mov", i8, val, rax);
 }
 
+void ConstantString::generateAssembly(assembly& ass)
+{
+	ass.add("\tsubq $32, %rsp");
+	ass.add("\tmovq $" + std::to_string(val.length() + 1) + ", %rax");
+	ass.add("\tmovq %rax, 0(%rsp)");
+	ass.add("\tmovq 0(%rsp), %rcx");
+	ass.add("\tcall malloc");
+	for (int i = 0; i < val.length(); i++) {
+		ass.add("\tmovb $" + std::to_string((int)val[i]) + ", " + std::to_string(i) + "(%rax)");
+	}
+	ass.add("\tmovb $0, " + std::to_string(val.length()) + "(%rax)");
+	ass.add("\taddq $32, %rsp");
+}
+
 void ExpressionLine::generateAssembly(assembly& ass)
 {
 	if (exp)
@@ -811,6 +845,9 @@ void VariableDeclarationLine::generateAssembly(assembly& ass)
 	}
 	else {
 		init_exp->generateAssembly(ass);
+		if (init_exp->return_type.lvalue) {
+			ass.add("\tmovq (%rax), %rax");
+		}
 	}
 	curr_scope->variables.insert({ name, {name, curr_scope->current_variable_location, var_type} });
 	curr_scope->current_variable_location -= 8;
@@ -825,7 +862,7 @@ void VariableRef::generateAssembly(assembly& ass)
 	}
 	if (sc) {
 		return_type = sc->variables[name].type;
-		return_type.lvalue=true;
+		return_type.lvalue = true;
 		ass.add("\tleaq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
 	}
 	else
@@ -876,6 +913,12 @@ void WhileLoop::generateAssembly(assembly& ass) {
 
 	ass.add("_while_start_" + std::to_string(while_cl) + ":");
 	condition->generateAssembly(ass);
+	if (condition->return_type.lvalue) {
+		size size = condition->return_type.pointers > 0 ? i64 : condition->return_type.sz;
+		ass.add("mov", size, rax, rcx, true, false);
+		ass.add("\tmovl $0, %eax");
+		ass.add("mov", size, rcx, rax, false, false);
+	}
 	ass.add("\tcmpl $0, %eax");
 	ass.add("\tje _while_end_" + std::to_string(while_cl));
 	inner->generateAssembly(ass);
@@ -893,6 +936,12 @@ void DoWhileLoop::generateAssembly(assembly& ass) {
 	ass.add("_do_while_start_" + std::to_string(do_while_cl) + ":");
 	inner->generateAssembly(ass);
 	condition->generateAssembly(ass);
+	if (condition->return_type.lvalue) {
+		size size = condition->return_type.pointers > 0 ? i64 : condition->return_type.sz;
+		ass.add("mov", size, rax, rcx, true, false);
+		ass.add("\tmovl $0, %eax");
+		ass.add("mov", size, rcx, rax, false, false);
+	}
 	ass.add("\tcmpl $0, %eax");
 	ass.add("\tje _do_while_end_" + std::to_string(do_while_cl));
 	ass.add("\tjmp _do_while_start_" + std::to_string(do_while_cl));
@@ -910,7 +959,15 @@ void ForLoop::generateAssembly(assembly& ass) {
 
 	if (initial) initial->generateAssembly(ass);
 	ass.add("_for_start_" + std::to_string(for_cl) + ":");
-	if (condition) condition->generateAssembly(ass);
+	if (condition) {
+		condition->generateAssembly(ass);
+		if (condition->return_type.lvalue) {
+			size size = condition->return_type.pointers > 0 ? i64 : condition->return_type.sz;
+			ass.add("mov", size, rax, rcx, true, false);
+			ass.add("\tmovl $0, %eax");
+			ass.add("mov", size, rcx, rax, false, false);
+		}
+	}
 	else ass.add("\tmovl $1, %eax");
 	ass.add("\tcmpl $0, %eax");
 	ass.add("\tje _for_end_" + std::to_string(for_cl));
@@ -959,7 +1016,10 @@ void FunctionCall::generateAssembly(assembly& ass) {
 	for (int i = 0; i < params.size(); i++) {
 		params[i]->generateAssembly(ass);
 		if (params[i]->return_type.lvalue) {
-			ass.add("\tmovq (%rax), %rax");
+			size size = params[i]->return_type.pointers > 0 ? i64 : params[i]->return_type.sz;
+			ass.add("mov", size, rax, rcx, true, false);
+			ass.add("\tmovl $0, %eax");
+			ass.add("mov", size, rcx, rax, false, false);
 		}
 		ass.add("\tmovq %rax, " + std::to_string(8 * i) + "(%rsp)");
 	}

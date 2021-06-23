@@ -10,36 +10,34 @@ enum class LineType {
 	Return, Expression, VariableDeclaration, If, Block, For, While, DoWhile, Break, Continue
 };
 enum class ExpressionType {
-	BinaryOperator, ConstantInt, VariableRef, UnaryOperator, Ternary, FunctionCall
+	BinaryOperator, ConstantInt, VariableRef, UnaryOperator, Ternary, FunctionCall,
+	ConstantChar, ConstantShort, ConstantLong, ConstantString
 };
 
 class DataType {
 public:
 	static const DataType INT;
-	static const DataType INT_REF;
 	static const DataType INT_PTR;
 	static const DataType CHAR;
-	static const DataType CHAR_REF;
 	static const DataType CHAR_PTR;
 	static const DataType SHORT;
-	static const DataType SHORT_REF;
 	static const DataType SHORT_PTR;
 	static const DataType LONG;
-	static const DataType LONG_REF;
 	static const DataType LONG_PTR;
 	int id;
 	int pointers;
 	bool lvalue;
+	size sz;
 	DataType()
-		: id(0), pointers(0), lvalue(false) {
+		: id(0), pointers(0), lvalue(false), sz(i64) {
 
 	}
 	DataType(const DataType& other)
-		: id(other.id), pointers(other.pointers), lvalue(other.lvalue) {
+		: id(other.id), pointers(other.pointers), lvalue(other.lvalue), sz(other.sz) {
 
 	}
-	DataType(int id, int pointers, bool lvalue)
-		: id(id), pointers(pointers), lvalue(lvalue) {
+	DataType(int id, int pointers, bool lvalue, size sz)
+		: id(id), pointers(pointers), lvalue(lvalue), sz(sz) {
 
 	}
 	bool operator==(const DataType& other) {
@@ -55,14 +53,14 @@ public:
 	}
 };
 
-inline const DataType DataType::CHAR = DataType(1, 0, false);
-inline const DataType DataType::CHAR_PTR = DataType(1, 1, false);
-inline const DataType DataType::SHORT = DataType(2, 0, false);
-inline const DataType DataType::SHORT_PTR = DataType(2, 1, false);
-inline const DataType DataType::INT = DataType(3, 0, false);
-inline const DataType DataType::INT_PTR = DataType(3, 1, false);
-inline const DataType DataType::LONG = DataType(4, 0, false);
-inline const DataType DataType::LONG_PTR = DataType(4, 1, false);
+inline const DataType DataType::CHAR = DataType(1, 0, false, i8);
+inline const DataType DataType::CHAR_PTR = DataType(1, 1, false, i8);
+inline const DataType DataType::SHORT = DataType(2, 0, false, i16);
+inline const DataType DataType::SHORT_PTR = DataType(2, 1, false, i16);
+inline const DataType DataType::INT = DataType(3, 0, false, i32);
+inline const DataType DataType::INT_PTR = DataType(3, 1, false, i32);
+inline const DataType DataType::LONG = DataType(4, 0, false, i64);
+inline const DataType DataType::LONG_PTR = DataType(4, 1, false, i64);
 
 struct assembly {
 	std::vector<std::string> lines;
@@ -80,7 +78,7 @@ struct assembly {
 	}
 
 	assembly& add(std::string instruction, size s, reg dst, bool index = false) {
-		lines.push_back("\t" + instruction + _suffix(s) + (index ? " (%" + _register(dst, s) + ")" : " %" + _register(dst, s)));
+		lines.push_back("\t" + instruction + _suffix(s) + (index ? " (%" + _register(dst, i64) + ")" : " %" + _register(dst, s)));
 		return *this;
 	}
 
@@ -121,8 +119,8 @@ struct assembly {
 
 	assembly& add(std::string instruction, size s, reg src, reg dst, bool src_index = false, bool dst_index = false) {
 		lines.push_back("\t" + instruction + _suffix(s) +
-			(src_index ? " (%" + _register(src, s) + ")" : " %" + _register(src, s)) +
-			(dst_index ? ", (%" + _register(dst, s) + ")" : ", %" + _register(dst, s)));
+			(src_index ? " (%" + _register(src, i64) + ")" : " %" + _register(src, s)) +
+			(dst_index ? ", (%" + _register(dst, i64) + ")" : ", %" + _register(dst, s)));
 		return *this;
 	}
 
@@ -285,7 +283,7 @@ struct BinaryOperator : Expression {
 };
 
 enum unary_operator {
-	negation, bitwise_complement, logical_negation,
+	negation, plus, bitwise_complement, logical_negation,
 	prefix_increment, prefix_decrement,
 	postfix_increment, postfix_decrement,
 	address, dereference
@@ -316,13 +314,13 @@ struct VariableRef : Expression {
 };
 
 struct ConstantChar : Expression {
-	ConstantChar(char val) : Expression(ExpressionType::ConstantInt, DataType::CHAR), val(val) { };
+	ConstantChar(char val) : Expression(ExpressionType::ConstantChar, DataType::CHAR), val(val) { };
 	char val;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
 struct ConstantShort : Expression {
-	ConstantShort(short val) : Expression(ExpressionType::ConstantInt, DataType::SHORT), val(val) { };
+	ConstantShort(short val) : Expression(ExpressionType::ConstantShort, DataType::SHORT), val(val) { };
 	short val;
 	virtual void generateAssembly(assembly& ass) override;
 };
@@ -334,8 +332,14 @@ struct ConstantInt : Expression {
 };
 
 struct ConstantLong : Expression {
-	ConstantLong(long long val) : Expression(ExpressionType::ConstantInt, DataType::LONG), val(val) { };
+	ConstantLong(long long val) : Expression(ExpressionType::ConstantLong, DataType::LONG), val(val) { };
 	long long val;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct ConstantString : Expression {
+	ConstantString(std::string val) : Expression(ExpressionType::ConstantString, DataType::CHAR_PTR), val(val) { };
+	std::string val;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
