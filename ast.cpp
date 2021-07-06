@@ -7,6 +7,28 @@ std::map<std::tuple<DataType, binary_operator, DataType>, DataType > binary_oper
 std::map<std::tuple<DataType, unary_operator>, assembly > unary_operator_assembly;
 std::map<std::tuple<DataType, unary_operator>, DataType > unary_operator_result_type;
 
+struct _field {
+	std::string name;
+	DataType type;
+	int offset;
+};
+
+struct _struct {
+	int id;
+	int size; // bytes
+	std::string name;
+	std::vector<_field> fields;
+	std::map<std::string, _field> fields_by_name;
+	bool operator<(const _struct& other) const {
+		if (name < other.name) return true;
+		if (name > other.name) return false;
+		return false;
+	}
+};
+
+std::map<int, _struct> struct_by_data_type_id;
+std::map<std::string, _struct> struct_by_name;
+
 token check_token(std::queue<token>& tokens, token_type type) {
 	token t = tokens.front();
 	tokens.pop();
@@ -22,6 +44,10 @@ DataType getDataType(std::queue<token>& tokens) {
 	if (t.type == CHAR_KEYWORD) d = DataType::CHAR;
 	if (t.type == SHORT_KEYWORD) d = DataType::SHORT;
 	if (t.type == LONG_KEYWORD) d = DataType::LONG;
+	if (t.type == NAME) {
+		d.id = struct_by_name[t.value].id;
+		d.sz = struct_by_name[t.value].size;
+	}
 	while (tokens.front().type == ASTERISK) {
 		tokens.pop();
 		d.pointers++;
@@ -94,7 +120,7 @@ Expression* compile_0(std::queue<token>& tokens) {
 Expression* compile_2(std::queue<token>& tokens) {
 	Expression* exp = compile_0(tokens);
 	while (tokens.front().type == INCREMENT || tokens.front().type == DECREMENT || tokens.front().type == OPEN_PARENTHESES
-		|| tokens.front().type == OPEN_BRACKET) {
+		|| tokens.front().type == OPEN_BRACKET || tokens.front().type == DOT) {
 		token t = tokens.front();
 		tokens.pop();
 		if (t.type == INCREMENT) {
@@ -102,6 +128,10 @@ Expression* compile_2(std::queue<token>& tokens) {
 		}
 		else if (t.type == DECREMENT) {
 			exp = create_unary_operator(exp, postfix_decrement);
+		}
+		else if (t.type == DOT) {
+			std::string name = check_token(tokens, NAME).value;
+			exp = new MemberAccess(exp, name, DataType::INT);
 		}
 		else if (t.type == OPEN_BRACKET) {
 			Expression* exp2 = compile_17(tokens);
@@ -491,9 +521,22 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 	}
 }
 
+VariableDeclarationLine* compile_var_decl(std::queue<token>& tokens) {
+	DataType d = getDataType(tokens);
+	std::string name = check_token(tokens, NAME).value;
+	Expression* exp = nullptr;
+	if (tokens.front().type == EQUAL_SIGN) {
+		check_token(tokens, EQUAL_SIGN);
+		exp = compile_17(tokens);
+	}
+	check_token(tokens, SEMICOLON);
+	return new VariableDeclarationLine(exp, d, name);
+}
+
 BlockItem* compile_block_item(std::queue<token>& tokens) {
 	token t = tokens.front();
-	if (t.type == INT_KEYWORD || t.type == LONG_KEYWORD || t.type == CHAR_KEYWORD || t.type == SHORT_KEYWORD) {
+	if (t.type == INT_KEYWORD || t.type == LONG_KEYWORD || t.type == CHAR_KEYWORD || t.type == SHORT_KEYWORD || 
+		(t.type==NAME && struct_by_name.find(t.value)!=struct_by_name.end())) {
 		DataType d = getDataType(tokens);
 		std::string name = check_token(tokens, NAME).value;
 		Expression* exp = nullptr;
@@ -507,6 +550,42 @@ BlockItem* compile_block_item(std::queue<token>& tokens) {
 	else return compile_line(tokens);
 }
 
+void compile_struct(std::queue<token>& tokens)
+{
+	static int id = 5;
+
+	_struct struc;
+	struc.id = id++;
+
+	check_token(tokens, STRUCT_KEYWORD);
+
+	struc.name = check_token(tokens, NAME).value;
+
+	check_token(tokens, OPEN_BRACES);
+
+	int offset = 0;
+	while (tokens.front().type != CLOSE_BRACES) {
+		VariableDeclarationLine* var = compile_var_decl(tokens);
+
+		_field f;
+		f.name = var->name;
+		f.offset = offset;
+		offset -= 8;
+		f.type = var->var_type;
+		struc.fields.push_back(f);
+		struc.fields_by_name[f.name] = f;
+
+	}
+	struc.size = -offset;
+
+	check_token(tokens, CLOSE_BRACES);
+	check_token(tokens, SEMICOLON);
+
+	struct_by_data_type_id[struc.id] = struc;
+	struct_by_name[struc.name] = struc;
+	
+	return;
+}
 Function* compile_function(std::queue<token>& tokens)
 {
 	Function* f = new Function();
@@ -515,11 +594,13 @@ Function* compile_function(std::queue<token>& tokens)
 	check_token(tokens, OPEN_PARENTHESES);
 	if (tokens.front().type != CLOSE_PARENTHESES) {
 		DataType dt = getDataType(tokens);
+		if (dt.id > 4) dt.lvalue = true;
 		std::string name = check_token(tokens, NAME).value;
 		f->params.push_back({ name, dt });
 		while (tokens.front().type == COMMA) {
 			tokens.pop();
 			DataType dt = getDataType(tokens);
+			if (dt.id > 4) dt.lvalue = true;
 			std::string name = check_token(tokens, NAME).value;
 			f->params.push_back({ name, dt });
 		}
@@ -532,8 +613,11 @@ Function* compile_function(std::queue<token>& tokens)
 Application* compile_application(std::queue<token>& tokens)
 {
 	Application* a = new Application();
-	while (!tokens.empty() && tokens.front().type == INT_KEYWORD) {
-		a->functions.push_back(compile_function(tokens));
+	while (!tokens.empty()) {
+		if (tokens.front().type == INT_KEYWORD)
+			a->functions.push_back(compile_function(tokens));
+		else
+			compile_struct(tokens);
 	}
 	return a;
 }
@@ -613,6 +697,31 @@ void Return::generateAssembly(assembly& ass)
 	ass.add("\tret");
 }
 
+void Struct::generateAssembly(assembly& ass) {
+	_struct struc;
+	struc.name = name;
+	int offset = 0;
+	for (VariableDeclarationLine* var : fields) {
+		_field f;
+		f.name = var->name;
+		f.offset = offset;
+		offset += 8;
+		f.type = var->var_type;
+		struc.fields.push_back(f);
+		struc.fields_by_name[name] = f;
+	}
+	struct_by_data_type_id[5 + struct_by_data_type_id.size()] = struc;
+}
+
+void MemberAccess::generateAssembly(assembly& ass) {
+	left->generateAssembly(ass);
+	if (left->return_type.lvalue) {
+		ass.add("\tsubq $"+ std::to_string(struct_by_data_type_id[left->return_type.id].fields_by_name[right].offset)+", %rax");
+		return_type = struct_by_data_type_id[left->return_type.id].fields_by_name[right].type;
+		return_type.lvalue = true;
+	}
+}
+
 void addBinaryOperator(DataType type1, binary_operator op, DataType type2, DataType return_type, assembly ass) {
 	binary_operator_result_type[{type1, op, type2 }] = return_type;
 	binary_operator_assembly[{type1, op, type2 }] = ass;
@@ -632,6 +741,10 @@ void initAST() {
 		lvalue[i].lvalue = true;
 	}
 	DataType pointer[] = { DataType::CHAR_PTR, DataType::SHORT_PTR, DataType::INT_PTR, DataType::LONG_PTR };
+	DataType lvalue_pointer[] = { DataType::CHAR_PTR, DataType::SHORT_PTR, DataType::INT_PTR, DataType::LONG_PTR };
+	for (int i = 0; i < 4; i++) {
+		lvalue_pointer[i].lvalue = true;
+	}
 
 	for (int i = 0; i < 4; i++) {
 		addBinaryOperator(normal[i], add, normal[i], normal[i],
@@ -672,6 +785,10 @@ void initAST() {
 	}
 
 	for (int i = 0; i < 4; i++) {
+
+		addBinaryOperator(lvalue_pointer[i], assignment, pointer[i], lvalue_pointer[i],
+			assembly().add("mov", i64, rcx, rax, false, true));
+
 		addBinaryOperator(lvalue[i], assignment, normal[i], lvalue[i],
 			assembly().add("mov", sizes[i], rcx, rax, false, true));
 		addBinaryOperator(lvalue[i], add_assign, normal[i], lvalue[i],
@@ -719,6 +836,16 @@ void initAST() {
 			assembly().add("mov", sizes[i], rax, rcx, true).add("inc", sizes[i], rax, true).add("mov", sizes[i], rcx, rax));
 		addUnaryOperator(lvalue[i], postfix_decrement, normal[i],
 			assembly().add("mov", sizes[i], rax, rcx, true).add("dec", sizes[i], rax, true).add("mov", sizes[i], rcx, rax));
+
+		addUnaryOperator(lvalue_pointer[i], prefix_increment, lvalue_pointer[i],
+			assembly().add("inc", i64, rax, true));
+		addUnaryOperator(lvalue_pointer[i], prefix_decrement, lvalue_pointer[i],
+			assembly().add("dec", i64, rax, true));
+
+		addUnaryOperator(lvalue_pointer[i], postfix_increment, lvalue_pointer[i],
+			assembly().add("mov", i64, rax, rcx, true).add("inc", i64, rax, true).add("mov", i64, rcx, rax));
+		addUnaryOperator(lvalue_pointer[i], postfix_decrement, lvalue_pointer[i],
+			assembly().add("mov", i64, rax, rcx, true).add("dec", i64, rax, true).add("mov", i64, rcx, rax));
 	}
 	for (int i = 0; i < 4; i++) {
 		addUnaryOperator(lvalue[i], address, pointer[i], assembly());
@@ -740,12 +867,12 @@ void BinaryOperator::generateAssembly(assembly& ass)
 		if (op == logical_or) {
 			int logical_operator_cl = logical_operator_clause++;
 			right->generateAssembly(ass);
-			ass.add("\tcmpl $0, %eax");
+			ass.add("\tcmpq $0, %rax");
 			ass.add("\tje _loc" + std::to_string(logical_operator_cl));
 			ass.add("\tmovl $1, %eax");
 			ass.add("jmp _loc_end" + std::to_string(logical_operator_cl));
 			ass.add("_loc" + std::to_string(logical_operator_cl) + ":");
-			ass.add("\tcmpl $0, %eax");
+			ass.add("\tcmpq $0, %rax");
 			ass.add("\tmovl $0, %eax");
 			ass.add("\tsetne %al");
 			ass.add("_loc_end" + std::to_string(logical_operator_cl) + ":");
@@ -753,11 +880,11 @@ void BinaryOperator::generateAssembly(assembly& ass)
 		}
 		else if (op == logical_and) {
 			int logical_operator_cl = logical_operator_clause++;
-			ass.add("\tcmpl $0, %eax");
+			ass.add("\tcmpq $0, %rax");
 			ass.add("\tjne _loc" + std::to_string(logical_operator_cl));
 			ass.add("jmp _loc_end" + std::to_string(logical_operator_cl));
 			ass.add("_loc" + std::to_string(logical_operator_cl) + ":");
-			ass.add("\tcmpl $0, %eax");
+			ass.add("\tcmpq $0, %rax");
 			ass.add("\tmovl $0, %eax");
 			ass.add("\tsetne %al");
 			ass.add("_loc_end" + std::to_string(logical_operator_cl) + ":");
@@ -841,17 +968,20 @@ void ExpressionLine::generateAssembly(assembly& ass)
 void VariableDeclarationLine::generateAssembly(assembly& ass)
 {
 	if (init_exp == nullptr) {
-		ass.add("mov", i32, 0, rax);
+		ass.add("\tmovq $0, %rax");
+		for (int i = 0; i < (var_type.sz+7) / 8; i++) {
+			ass.add("\tpush %rax");
+		}
 	}
 	else {
 		init_exp->generateAssembly(ass);
 		if (init_exp->return_type.lvalue) {
 			ass.add("\tmovq (%rax), %rax");
 		}
+		ass.add("\tpush %rax");
 	}
 	curr_scope->variables.insert({ name, {name, curr_scope->current_variable_location, var_type} });
-	curr_scope->current_variable_location -= 8;
-	ass.add("\tpush %rax");
+	curr_scope->current_variable_location -= var_type.sz;
 }
 
 void VariableRef::generateAssembly(assembly& ass)
@@ -862,8 +992,13 @@ void VariableRef::generateAssembly(assembly& ass)
 	}
 	if (sc) {
 		return_type = sc->variables[name].type;
-		return_type.lvalue = true;
-		ass.add("\tleaq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
+		if (return_type.lvalue) {
+			ass.add("\tmovq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
+		}
+		else {
+			return_type.lvalue = true;
+			ass.add("\tleaq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
+		}
 	}
 	else
 		; //could not find variable
@@ -875,7 +1010,7 @@ void IfStatement::generateAssembly(assembly& ass)
 	static int if_clause = 0;
 	int if_cl = if_clause++;
 	condition->generateAssembly(ass);
-	ass.add("\tcmpl $0, %eax");
+	ass.add("\tcmpq $0, %rax");
 	ass.add("\tje _e3_if_" + std::to_string(if_cl));
 	if_cond->generateAssembly(ass);
 	ass.add("\tjmp _post_conditional_if_" + std::to_string(if_cl));
@@ -889,7 +1024,7 @@ void TernaryExpression::generateAssembly(assembly& ass)
 	static int ternary_clause = 0;
 	int ternary_cl = ternary_clause++;
 	condition->generateAssembly(ass);
-	ass.add("\tcmpl $0, %eax");
+	ass.add("\tcmpq $0, %rax");
 	ass.add("\tje _e3_" + std::to_string(ternary_cl));
 	if_cond->generateAssembly(ass);
 	ass.add("\tjmp _post_conditional_" + std::to_string(ternary_cl));
@@ -914,12 +1049,12 @@ void WhileLoop::generateAssembly(assembly& ass) {
 	ass.add("_while_start_" + std::to_string(while_cl) + ":");
 	condition->generateAssembly(ass);
 	if (condition->return_type.lvalue) {
-		size size = condition->return_type.pointers > 0 ? i64 : condition->return_type.sz;
+		size size = condition->return_type.pointers > 0 ? i64 : _size(condition->return_type.sz);
 		ass.add("mov", size, rax, rcx, true, false);
 		ass.add("\tmovl $0, %eax");
 		ass.add("mov", size, rcx, rax, false, false);
 	}
-	ass.add("\tcmpl $0, %eax");
+	ass.add("\tcmpq $0, %rax");
 	ass.add("\tje _while_end_" + std::to_string(while_cl));
 	inner->generateAssembly(ass);
 	ass.add("\tjmp _while_start_" + std::to_string(while_cl));
@@ -937,12 +1072,12 @@ void DoWhileLoop::generateAssembly(assembly& ass) {
 	inner->generateAssembly(ass);
 	condition->generateAssembly(ass);
 	if (condition->return_type.lvalue) {
-		size size = condition->return_type.pointers > 0 ? i64 : condition->return_type.sz;
+		size size = condition->return_type.pointers > 0 ? i64 : _size(condition->return_type.sz);
 		ass.add("mov", size, rax, rcx, true, false);
 		ass.add("\tmovl $0, %eax");
 		ass.add("mov", size, rcx, rax, false, false);
 	}
-	ass.add("\tcmpl $0, %eax");
+	ass.add("\tcmpq $0, %rax");
 	ass.add("\tje _do_while_end_" + std::to_string(do_while_cl));
 	ass.add("\tjmp _do_while_start_" + std::to_string(do_while_cl));
 	ass.add("_do_while_end_" + std::to_string(do_while_cl) + ":");
@@ -962,14 +1097,14 @@ void ForLoop::generateAssembly(assembly& ass) {
 	if (condition) {
 		condition->generateAssembly(ass);
 		if (condition->return_type.lvalue) {
-			size size = condition->return_type.pointers > 0 ? i64 : condition->return_type.sz;
+			size size = condition->return_type.pointers > 0 ? i64 : _size(condition->return_type.sz);
 			ass.add("mov", size, rax, rcx, true, false);
 			ass.add("\tmovl $0, %eax");
 			ass.add("mov", size, rcx, rax, false, false);
 		}
 	}
 	else ass.add("\tmovl $1, %eax");
-	ass.add("\tcmpl $0, %eax");
+	ass.add("\tcmpq $0, %rax");
 	ass.add("\tje _for_end_" + std::to_string(for_cl));
 	inner->generateAssembly(ass);
 	ass.add("_for_continue_" + std::to_string(for_cl) + ":");
@@ -1015,10 +1150,10 @@ void FunctionCall::generateAssembly(assembly& ass) {
 	ass.add("\tsubq $" + std::to_string(std::max(32u, 8 * params.size())) + ", %rsp");
 	for (int i = 0; i < params.size(); i++) {
 		params[i]->generateAssembly(ass);
-		if (params[i]->return_type.lvalue) {
-			size size = params[i]->return_type.pointers > 0 ? i64 : params[i]->return_type.sz;
+		if (params[i]->return_type.lvalue && !f.params[i].second.lvalue) {
+			size size = params[i]->return_type.pointers > 0 ? i64 : _size(params[i]->return_type.sz);
 			ass.add("mov", size, rax, rcx, true, false);
-			ass.add("\tmovl $0, %eax");
+			ass.add("\tmovq $0, %rax");
 			ass.add("mov", size, rcx, rax, false, false);
 		}
 		ass.add("\tmovq %rax, " + std::to_string(8 * i) + "(%rsp)");

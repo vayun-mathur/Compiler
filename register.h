@@ -18,6 +18,15 @@ inline int _bytes(size s) {
 	}
 }
 
+inline size _size(int s) {
+	switch (s) {
+	case 1: return i8;
+	case 2: return i16;
+	case 4: return i32;
+	case 8: return i64;
+	}
+}
+
 inline std::string _suffix(size s) {
 	switch (s) {
 	case i8: return "b";

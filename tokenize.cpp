@@ -20,7 +20,7 @@ token_data token_regex[] = {
     {SHORT_KEYWORD, R"(short)"},
     {INT_KEYWORD, R"(int)"},
     {RETURN_KEYWORD, R"(return)"},
-    {SEMICOLON, R"(;)"},
+    {STRUCT_KEYWORD, R"(struct)"},
 
     {FOR_KEYWORD, R"(for)"},
     {WHILE_KEYWORD, R"(while)"},
@@ -31,6 +31,8 @@ token_data token_regex[] = {
     {IF_KEYWORD, R"(if)"},
     {ELSE_KEYWORD, R"(else)"},
     {COLON, R"(:)"},
+    {SEMICOLON, R"(;)"},
+    {DOT, R"(\.)"},
     {QUESTION_MARK, R"(\?)"},
 
     {INCREMENT, R"(\+\+)"},

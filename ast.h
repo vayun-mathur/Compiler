@@ -11,7 +11,7 @@ enum class LineType {
 };
 enum class ExpressionType {
 	BinaryOperator, ConstantInt, VariableRef, UnaryOperator, Ternary, FunctionCall,
-	ConstantChar, ConstantShort, ConstantLong, ConstantString
+	ConstantChar, ConstantShort, ConstantLong, ConstantString, MemberAccess
 };
 
 class DataType {
@@ -27,16 +27,16 @@ public:
 	int id;
 	int pointers;
 	bool lvalue;
-	size sz;
+	int sz;
 	DataType()
-		: id(0), pointers(0), lvalue(false), sz(i64) {
+		: id(0), pointers(0), lvalue(false), sz(8) {
 
 	}
 	DataType(const DataType& other)
 		: id(other.id), pointers(other.pointers), lvalue(other.lvalue), sz(other.sz) {
 
 	}
-	DataType(int id, int pointers, bool lvalue, size sz)
+	DataType(int id, int pointers, bool lvalue, int sz)
 		: id(id), pointers(pointers), lvalue(lvalue), sz(sz) {
 
 	}
@@ -53,14 +53,14 @@ public:
 	}
 };
 
-inline const DataType DataType::CHAR = DataType(1, 0, false, i8);
-inline const DataType DataType::CHAR_PTR = DataType(1, 1, false, i8);
-inline const DataType DataType::SHORT = DataType(2, 0, false, i16);
-inline const DataType DataType::SHORT_PTR = DataType(2, 1, false, i16);
-inline const DataType DataType::INT = DataType(3, 0, false, i32);
-inline const DataType DataType::INT_PTR = DataType(3, 1, false, i32);
-inline const DataType DataType::LONG = DataType(4, 0, false, i64);
-inline const DataType DataType::LONG_PTR = DataType(4, 1, false, i64);
+inline const DataType DataType::CHAR = DataType(1, 0, false, _bytes(i8));
+inline const DataType DataType::CHAR_PTR = DataType(1, 1, false, _bytes(i8));
+inline const DataType DataType::SHORT = DataType(2, 0, false, _bytes(i16));
+inline const DataType DataType::SHORT_PTR = DataType(2, 1, false, _bytes(i16));
+inline const DataType DataType::INT = DataType(3, 0, false, _bytes(i32));
+inline const DataType DataType::INT_PTR = DataType(3, 1, false, _bytes(i32));
+inline const DataType DataType::LONG = DataType(4, 0, false, _bytes(i64));
+inline const DataType DataType::LONG_PTR = DataType(4, 1, false, _bytes(i64));
 
 struct assembly {
 	std::vector<std::string> lines;
@@ -197,6 +197,12 @@ struct Function : ASTNode {
 	virtual void generateAssembly(assembly& ass) override;
 };
 
+struct Struct : ASTNode {
+	std::string name;
+	std::vector<VariableDeclarationLine*> fields;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
 struct FunctionCall : Expression {
 	std::string name;
 	std::vector<Expression*> params;
@@ -310,6 +316,13 @@ struct VariableRef : Expression {
 		name(name) {
 	};
 	std::string name;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
+struct MemberAccess : Expression {
+	MemberAccess(Expression* left, std::string right, DataType return_type) : Expression(ExpressionType::MemberAccess, return_type), left(left), right(right) { };
+	Expression* left;
+	std::string right;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
