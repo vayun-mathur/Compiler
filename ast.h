@@ -326,6 +326,13 @@ struct MemberAccess : Expression {
 	virtual void generateAssembly(assembly& ass) override;
 };
 
+struct PointerMemberAccess : Expression {
+	PointerMemberAccess(Expression* left, std::string right, DataType return_type) : Expression(ExpressionType::MemberAccess, return_type), left(left), right(right) { };
+	Expression* left;
+	std::string right;
+	virtual void generateAssembly(assembly& ass) override;
+};
+
 struct ConstantChar : Expression {
 	ConstantChar(char val) : Expression(ExpressionType::ConstantChar, DataType::CHAR), val(val) { };
 	char val;

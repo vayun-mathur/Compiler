@@ -120,12 +120,10 @@ Expression* compile_0(std::queue<token>& tokens) {
 
 // type()
 // type{}
-// .
-// ->
 Expression* compile_2(std::queue<token>& tokens) {
 	Expression* exp = compile_0(tokens);
 	while (tokens.front().type == INCREMENT || tokens.front().type == DECREMENT || tokens.front().type == OPEN_PARENTHESES
-		|| tokens.front().type == OPEN_BRACKET || tokens.front().type == DOT) {
+		|| tokens.front().type == OPEN_BRACKET || tokens.front().type == DOT || tokens.front().type == ARROW) {
 		token t = tokens.front();
 		tokens.pop();
 		if (t.type == INCREMENT) {
@@ -137,6 +135,10 @@ Expression* compile_2(std::queue<token>& tokens) {
 		else if (t.type == DOT) {
 			std::string name = check_token(tokens, NAME).value;
 			exp = new MemberAccess(exp, name, DataType::INT);
+		}
+		else if (t.type == ARROW) {
+			std::string name = check_token(tokens, NAME).value;
+			exp = new PointerMemberAccess(exp, name, DataType::INT);
 		}
 		else if (t.type == OPEN_BRACKET) {
 			Expression* exp2 = compile_17(tokens);
@@ -599,13 +601,13 @@ Function* compile_function(std::queue<token>& tokens)
 	check_token(tokens, OPEN_PARENTHESES);
 	if (tokens.front().type != CLOSE_PARENTHESES) {
 		DataType dt = getDataType(tokens);
-		if (dt.id > 4) dt.lvalue = true;
+		if (dt.id > 4 && dt.pointers == 0) dt.lvalue = true;
 		std::string name = check_token(tokens, NAME).value;
 		f->params.push_back({ name, dt });
 		while (tokens.front().type == COMMA) {
 			tokens.pop();
 			DataType dt = getDataType(tokens);
-			if (dt.id > 4) dt.lvalue = true;
+			if (dt.id > 4 && dt.pointers==0) dt.lvalue = true;
 			std::string name = check_token(tokens, NAME).value;
 			f->params.push_back({ name, dt });
 		}
@@ -723,6 +725,30 @@ void MemberAccess::generateAssembly(assembly& ass) {
 	if (left->return_type.lvalue) {
 		ass.add("\tsubq $"+ std::to_string(struct_by_data_type_id[left->return_type.id].fields_by_name[right].offset)+", %rax");
 		return_type = struct_by_data_type_id[left->return_type.id].fields_by_name[right].type;
+		return_type.lvalue = true;
+	}
+}
+
+void PointerMemberAccess::generateAssembly(assembly& ass) {
+	left->generateAssembly(ass);
+
+	DataType l = left->return_type;
+
+	size sz = i64;
+	if (l.pointers == 1) {
+		if (l.id == 1) sz = i8;
+		if (l.id == 2) sz = i16;
+		if (l.id == 3) sz = i32;
+		if (l.id == 4) sz = i64;
+	}
+	if (l.lvalue) {
+		ass.add("\tmovq (%rax), %rax");
+	}
+	DataType deref = return_type = DataType(l.id, l.pointers - 1, true, sz);
+
+	if (deref.lvalue) {
+		ass.add("\tsubq $" + std::to_string(struct_by_data_type_id[deref.id].fields_by_name[right].offset) + ", %rax");
+		return_type = struct_by_data_type_id[deref.id].fields_by_name[right].type;
 		return_type.lvalue = true;
 	}
 }
@@ -922,12 +948,40 @@ void UnaryOperator::generateAssembly(assembly& ass)
 {
 	left->generateAssembly(ass);
 	DataType l = left->return_type;
-	if (unary_operator_assembly.find({ l, op }) == unary_operator_assembly.end() && l.lvalue) {
-		l.lvalue = false;
-		ass.add("\tmovq (%rax), %rax");
+	if (op == unary_operator::address) {
+		if (!l.lvalue) {
+
+		}
+		else {
+			return_type = DataType(l.id, l.pointers + 1, false, i64);
+		}
 	}
-	ass.add(unary_operator_assembly[{l, op}]);
-	return_type = unary_operator_result_type[{l, op}];
+	else if (op == unary_operator::dereference) {
+		if (l.pointers == 0) {
+
+		}
+		else {
+			size sz = i64;
+			if (l.pointers == 1) {
+				if (l.id == 1) sz = i8;
+				if (l.id == 2) sz = i16;
+				if (l.id == 3) sz = i32;
+				if (l.id == 4) sz = i64;
+			}
+			if (l.lvalue) {
+				ass.add("\tmovq (%rax), %rax");
+			}
+			return_type = DataType(l.id, l.pointers - 1, true, sz);
+		}
+	}
+	else {
+		if (unary_operator_assembly.find({ l, op }) == unary_operator_assembly.end() && l.lvalue) {
+			l.lvalue = false;
+			ass.add("\tmovq (%rax), %rax");
+		}
+		ass.add(unary_operator_assembly[{l, op}]);
+		return_type = unary_operator_result_type[{l, op}];
+	}
 }
 
 void ConstantInt::generateAssembly(assembly& ass)

@@ -32,6 +32,7 @@ token_data token_regex[] = {
     {ELSE_KEYWORD, R"(else)"},
     {COLON, R"(:)"},
     {SEMICOLON, R"(;)"},
+    {ARROW, R"(\->)"},
     {DOT, R"(\.)"},
     {QUESTION_MARK, R"(\?)"},
 
