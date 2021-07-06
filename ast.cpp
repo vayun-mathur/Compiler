@@ -69,7 +69,12 @@ Expression* compile_17(std::queue<token>& tokens);
 Expression* compile_16(std::queue<token>& tokens);
 
 Expression* compile_0(std::queue<token>& tokens) {
-	if (tokens.front().type == INT_VALUE) {
+	if (tokens.front().type == OPEN_PARENTHESES) {
+		tokens.pop();
+		Expression* expr = compile_17(tokens);
+		check_token(tokens, CLOSE_PARENTHESES);
+		return expr;
+	} else if (tokens.front().type == INT_VALUE) {
 		return new ConstantInt(stoi(check_token(tokens, INT_VALUE).value));
 	}
 	else if (tokens.front().type == CHAR_VALUE) {
