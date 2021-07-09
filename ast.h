@@ -16,6 +16,8 @@ enum class ExpressionType {
 
 class DataType {
 public:
+	static const DataType VOID;
+
 	static const DataType INT;
 	static const DataType INT_PTR;
 	static const DataType CHAR;
@@ -53,6 +55,7 @@ public:
 	}
 };
 
+inline const DataType DataType::VOID = DataType(0, 0, false, 0);
 inline const DataType DataType::CHAR = DataType(1, 0, false, _bytes(i8));
 inline const DataType DataType::CHAR_PTR = DataType(1, 1, false, _bytes(i8));
 inline const DataType DataType::SHORT = DataType(2, 0, false, _bytes(i16));
@@ -193,25 +196,28 @@ struct VariableDeclarationLine : BlockItem {
 struct Function : ASTNode {
 	std::string name;
 	std::vector<std::pair<std::string, DataType>> params;
+	DataType return_type;
 	CodeBlock* lines;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
 struct Struct : ASTNode {
+	int id;
 	std::string name;
 	std::vector<VariableDeclarationLine*> fields;
+	std::vector<Function*> functions;
 	virtual void generateAssembly(assembly& ass) override;
 };
 
 struct FunctionCall : Expression {
-	std::string name;
+	Expression* loc;
 	std::vector<Expression*> params;
-	FunctionCall(std::string name, DataType return_type) : Expression(ExpressionType::FunctionCall, return_type), name(name) {}
+	FunctionCall(Expression* loc, DataType return_type) : Expression(ExpressionType::FunctionCall, return_type), loc(loc) {}
 	virtual void generateAssembly(assembly& ass) override;
 };
 
 struct Application : ASTNode {
-	std::vector<Function*> functions;
+	std::vector<ASTNode*> nodes;
 	virtual void generateAssembly(assembly& ass) override;
 };
 

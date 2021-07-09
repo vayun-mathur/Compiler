@@ -1,5 +1,6 @@
 #include "ast.h"
 #include <map>
+#include <set>
 
 std::map<std::tuple<DataType, binary_operator, DataType>, assembly > binary_operator_assembly;
 std::map<std::tuple<DataType, binary_operator, DataType>, DataType > binary_operator_result_type;
@@ -13,12 +14,27 @@ struct _field {
 	int offset;
 };
 
+struct function {
+	std::string name;
+	std::vector<std::pair<std::string, DataType>> params;
+	bool operator<(const function& other) const {
+		if (name < other.name) return true;
+		if (name > other.name) return false;
+		return false;
+	}
+};
+
+std::map<function, bool> functions;
+
 struct _struct {
 	int id;
 	int size; // bytes
 	std::string name;
+
+	//fields
 	std::vector<_field> fields;
 	std::map<std::string, _field> fields_by_name;
+
 	bool operator<(const _struct& other) const {
 		if (name < other.name) return true;
 		if (name > other.name) return false;
@@ -28,6 +44,7 @@ struct _struct {
 
 std::map<int, _struct> struct_by_data_type_id;
 std::map<std::string, _struct> struct_by_name;
+std::map<std::string, std::pair<int, int>> structs;
 
 token check_token(std::queue<token>& tokens, token_type type) {
 	token t = tokens.front();
@@ -44,9 +61,10 @@ DataType getDataType(std::queue<token>& tokens) {
 	if (t.type == CHAR_KEYWORD) d = DataType::CHAR;
 	if (t.type == SHORT_KEYWORD) d = DataType::SHORT;
 	if (t.type == LONG_KEYWORD) d = DataType::LONG;
+	if (t.type == VOID_KEYWORD) d = DataType::VOID;
 	if (t.type == NAME) {
-		d.id = struct_by_name[t.value].id;
-		d.sz = struct_by_name[t.value].size;
+		d.id = structs[t.value].first;
+		d.sz = structs[t.value].second;
 	}
 	while (tokens.front().type == ASTERISK) {
 		tokens.pop();
@@ -147,7 +165,7 @@ Expression* compile_2(std::queue<token>& tokens) {
 			exp = create_unary_operator(exp, dereference);
 		}
 		else {
-			exp = new FunctionCall(((VariableRef*)exp)->name, DataType::INT);
+			exp = new FunctionCall(exp, DataType::INT);
 			if (tokens.front().type != CLOSE_PARENTHESES) {
 				((FunctionCall*)exp)->params.push_back(compile_16(tokens));
 				while (tokens.front().type != CLOSE_PARENTHESES) {
@@ -448,9 +466,11 @@ LineOfCode* compile_line(std::queue<token>& tokens) {
 	token t = tokens.front();
 	if (t.type == RETURN_KEYWORD) {
 		check_token(tokens, RETURN_KEYWORD);
-		Return* r = new Return(compile_17(tokens));
+		Expression* ret_exp = nullptr;
+		if(tokens.front().type!=SEMICOLON)
+			ret_exp = compile_17(tokens);
 		check_token(tokens, SEMICOLON);
-		return r;
+		return new Return(ret_exp);
 	}
 	else if (t.type == IF_KEYWORD) {
 		check_token(tokens, IF_KEYWORD);
@@ -543,60 +563,79 @@ VariableDeclarationLine* compile_var_decl(std::queue<token>& tokens) {
 BlockItem* compile_block_item(std::queue<token>& tokens) {
 	token t = tokens.front();
 	if (t.type == INT_KEYWORD || t.type == LONG_KEYWORD || t.type == CHAR_KEYWORD || t.type == SHORT_KEYWORD || 
-		(t.type==NAME && struct_by_name.find(t.value)!=struct_by_name.end())) {
-		DataType d = getDataType(tokens);
-		std::string name = check_token(tokens, NAME).value;
-		Expression* exp = nullptr;
-		if (tokens.front().type == EQUAL_SIGN) {
-			check_token(tokens, EQUAL_SIGN);
-			exp = compile_17(tokens);
-		}
-		check_token(tokens, SEMICOLON);
-		return new VariableDeclarationLine(exp, d, name);
+		(t.type==NAME && structs.count(t.value))) {
+		return compile_var_decl(tokens);
 	}
 	else return compile_line(tokens);
 }
 
-void compile_struct(std::queue<token>& tokens)
+Struct* compile_struct(std::queue<token>& tokens)
 {
 	static int id = 5;
 
-	_struct struc;
-	struc.id = id++;
+	Struct* struc = new Struct();
+	
+
+	struc->id = id++;
 
 	check_token(tokens, STRUCT_KEYWORD);
 
-	struc.name = check_token(tokens, NAME).value;
+	struc->name = check_token(tokens, NAME).value;
 
 	check_token(tokens, OPEN_BRACES);
 
 	int offset = 0;
 	while (tokens.front().type != CLOSE_BRACES) {
-		VariableDeclarationLine* var = compile_var_decl(tokens);
+		DataType type = getDataType(tokens);
+		std::string name = check_token(tokens, NAME).value;
+		if (tokens.front().type == SEMICOLON || tokens.front().type == EQUAL_SIGN) {
+			Expression* exp = nullptr;
+			if (tokens.front().type == EQUAL_SIGN) {
+				check_token(tokens, EQUAL_SIGN);
+				exp = compile_17(tokens);
+			}
+			check_token(tokens, SEMICOLON);
+			struc->fields.push_back(new VariableDeclarationLine(exp, type, name));
+			offset += type.pointers?8:type.sz;
+		}
+		else {
+			Function* f = new Function();
+			f->name = struc->name + "____" + name;
+			f->params.push_back({ "this", DataType(struc->id, 1, false, 8) });
+			f->return_type = type;
+			check_token(tokens, OPEN_PARENTHESES);
+			if (tokens.front().type != CLOSE_PARENTHESES) {
+				DataType dt = getDataType(tokens);
+				if (dt.id > 4 && dt.pointers == 0) dt.lvalue = true;
+				std::string name = check_token(tokens, NAME).value;
+				f->params.push_back({ name, dt });
+				while (tokens.front().type == COMMA) {
+					tokens.pop();
+					DataType dt = getDataType(tokens);
+					if (dt.id > 4 && dt.pointers == 0) dt.lvalue = true;
+					std::string name = check_token(tokens, NAME).value;
+					f->params.push_back({ name, dt });
+				}
+			}
+			check_token(tokens, CLOSE_PARENTHESES);
+			if (tokens.front().type == SEMICOLON) tokens.pop();
+			else f->lines = compile_code_block(tokens);
 
-		_field f;
-		f.name = var->name;
-		f.offset = offset;
-		offset -= 8;
-		f.type = var->var_type;
-		struc.fields.push_back(f);
-		struc.fields_by_name[f.name] = f;
+			struc->functions.push_back(f);
+		}
 
 	}
-	struc.size = -offset;
+	structs.insert({ struc->name, {struc->id, offset} });
 
 	check_token(tokens, CLOSE_BRACES);
 	check_token(tokens, SEMICOLON);
-
-	struct_by_data_type_id[struc.id] = struc;
-	struct_by_name[struc.name] = struc;
 	
-	return;
+	return struc;
 }
 Function* compile_function(std::queue<token>& tokens)
 {
 	Function* f = new Function();
-	check_token(tokens, INT_KEYWORD);
+	f->return_type = getDataType(tokens);
 	f->name = check_token(tokens, NAME).value;
 	check_token(tokens, OPEN_PARENTHESES);
 	if (tokens.front().type != CLOSE_PARENTHESES) {
@@ -621,10 +660,10 @@ Application* compile_application(std::queue<token>& tokens)
 {
 	Application* a = new Application();
 	while (!tokens.empty()) {
-		if (tokens.front().type == INT_KEYWORD)
-			a->functions.push_back(compile_function(tokens));
+		if (tokens.front().type == STRUCT_KEYWORD)
+			a->nodes.push_back(compile_struct(tokens));
 		else
-			compile_struct(tokens);
+			a->nodes.push_back(compile_function(tokens));
 	}
 	return a;
 }
@@ -648,23 +687,12 @@ struct scope {
 };
 
 scope* curr_scope;
-
-struct function {
-	std::string name;
-	std::vector<std::pair<std::string, DataType>> params;
-	bool operator<(const function& other) const {
-		if (name < other.name) return true;
-		if (name > other.name) return false;
-		return false;
-	}
-};
-
-std::map<function, bool> functions;
+scope* global_scope = new scope();
 
 void Application::generateAssembly(assembly& ass)
 {
-	for (Function* func : functions) {
-		func->generateAssembly(ass);
+	for (ASTNode* node : nodes) {
+		node->generateAssembly(ass);
 	}
 }
 
@@ -680,8 +708,13 @@ void CodeBlock::generateAssembly(assembly& ass) {
 void Function::generateAssembly(assembly& ass)
 {
 	functions.insert({ { name, params }, lines != nullptr });
+	global_scope->variables.insert({ name, {name, 1'000'000'000, return_type} });
+
 	if (lines == nullptr) return;
+
 	curr_scope = new scope();
+
+	curr_scope->parent = global_scope;
 	curr_scope->current_variable_location = -8;
 	ass.add(".globl " + name);
 	ass.add(name + ":");
@@ -695,9 +728,11 @@ void Function::generateAssembly(assembly& ass)
 
 void Return::generateAssembly(assembly& ass)
 {
-	expr->generateAssembly(ass);
-	if (expr->return_type.lvalue) {
-		ass.add("\tmovq (%rax), %rax");
+	if (expr) {
+		expr->generateAssembly(ass);
+		if (expr->return_type.lvalue) {
+			ass.add("\tmovq (%rax), %rax");
+		}
 	}
 	ass.add("\tmovq %rbp, %rsp");
 	ass.add("\tpop %rbp");
@@ -706,6 +741,7 @@ void Return::generateAssembly(assembly& ass)
 
 void Struct::generateAssembly(assembly& ass) {
 	_struct struc;
+	struc.id = id;
 	struc.name = name;
 	int offset = 0;
 	for (VariableDeclarationLine* var : fields) {
@@ -715,17 +751,35 @@ void Struct::generateAssembly(assembly& ass) {
 		offset += 8;
 		f.type = var->var_type;
 		struc.fields.push_back(f);
-		struc.fields_by_name[name] = f;
+		struc.fields_by_name[f.name] = f;
 	}
-	struct_by_data_type_id[5 + struct_by_data_type_id.size()] = struc;
+
+	struc.size = offset;
+
+	struct_by_data_type_id[id] = struc;
+	struct_by_name[name] = struc;
+
+	for (Function* func : functions) {
+		func->generateAssembly(ass);
+	}
 }
 
 void MemberAccess::generateAssembly(assembly& ass) {
 	left->generateAssembly(ass);
 	if (left->return_type.lvalue) {
-		ass.add("\tsubq $"+ std::to_string(struct_by_data_type_id[left->return_type.id].fields_by_name[right].offset)+", %rax");
-		return_type = struct_by_data_type_id[left->return_type.id].fields_by_name[right].type;
-		return_type.lvalue = true;
+		_struct struc = struct_by_data_type_id[left->return_type.id];
+		if (struc.fields_by_name.find(right) == struc.fields_by_name.end()) {
+			std::string func_name = struc.name + "____" + right;
+			ass.add("\tpush %rax");
+			ass.add("\tmovq $" + func_name + ", %rax");
+			//TODO SOLVE THIS
+			return_type = DataType::INT;
+		}
+		else {
+			ass.add("\tsubq $" + std::to_string(struc.fields_by_name[right].offset) + ", %rax");
+			return_type = struc.fields_by_name[right].type;
+			return_type.lvalue = true;
+		}
 	}
 }
 
@@ -761,6 +815,28 @@ void addBinaryOperator(DataType type1, binary_operator op, DataType type2, DataT
 void addUnaryOperator(DataType type1, unary_operator op, DataType return_type, assembly ass) {
 	unary_operator_result_type[{type1, op }] = return_type;
 	unary_operator_assembly[{type1, op }] = ass;
+}
+
+void load_rcx(assembly& ass, size size) {
+	if (size < i32) {
+		ass.add("mov", size, rcx, rdx, true, false);
+		ass.add("\tmovq $0, %rcx");
+		ass.add("mov", size, rdx, rcx, false, false);
+	}
+	else {
+		ass.add("mov", size, rcx, rcx, true, false);
+	}
+}
+
+void load(assembly& ass, size size) {
+	if (size < i32) {
+		ass.add("mov", size, rax, rdx, true, false);
+		ass.add("\tmovq $0, %rax");
+		ass.add("mov", size, rdx, rax, false, false);
+	}
+	else {
+		ass.add("mov", size, rax, rax, true, false);
+	}
 }
 
 void initAST() {
@@ -925,19 +1001,34 @@ void BinaryOperator::generateAssembly(assembly& ass)
 
 	right->generateAssembly(ass);
 	ass.add("\tpush %rax");
+
 	left->generateAssembly(ass);
 	ass.add("\tpop %rcx");
 
 	DataType l = left->return_type;
 	DataType r = right->return_type;
 
+	if (op == assignment) {
+		if (!l.lvalue) {
+
+		}
+		else {
+			if (r.lvalue) {
+				r.lvalue = false;
+				load_rcx(ass, r.pointers?i64:_size(r.sz));
+			}
+			ass.add("mov", l.pointers ? i64 : _size(l.sz), rcx, rax, false, true);
+		}
+		return;
+	}
+
 	if (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && r.lvalue) {
 		r.lvalue = false;
-		ass.add("\tmovq (%rcx), %rcx");
+		load_rcx(ass, r.pointers ? i64 : _size(r.sz));
 	}
 	if (binary_operator_assembly.find({ l, op, r }) == binary_operator_assembly.end() && l.lvalue) {
 		l.lvalue = false;
-		ass.add("\tmovq (%rax), %rax");
+		load(ass, l.pointers ? i64 : _size(l.sz));
 	}
 
 	ass.add(binary_operator_assembly[{l, op, r}]);
@@ -969,7 +1060,7 @@ void UnaryOperator::generateAssembly(assembly& ass)
 				if (l.id == 4) sz = i64;
 			}
 			if (l.lvalue) {
-				ass.add("\tmovq (%rax), %rax");
+				load(ass, l.pointers ? i64 : _size(l.sz));
 			}
 			return_type = DataType(l.id, l.pointers - 1, true, sz);
 		}
@@ -977,7 +1068,7 @@ void UnaryOperator::generateAssembly(assembly& ass)
 	else {
 		if (unary_operator_assembly.find({ l, op }) == unary_operator_assembly.end() && l.lvalue) {
 			l.lvalue = false;
-			ass.add("\tmovq (%rax), %rax");
+			load(ass, l.pointers ? i64 : _size(l.sz));
 		}
 		ass.add(unary_operator_assembly[{l, op}]);
 		return_type = unary_operator_result_type[{l, op}];
@@ -1035,12 +1126,12 @@ void VariableDeclarationLine::generateAssembly(assembly& ass)
 	else {
 		init_exp->generateAssembly(ass);
 		if (init_exp->return_type.lvalue) {
-			ass.add("\tmovq (%rax), %rax");
+			load(ass, init_exp->return_type.pointers?i64:_size(init_exp->return_type.sz));
 		}
 		ass.add("\tpush %rax");
 	}
 	curr_scope->variables.insert({ name, {name, curr_scope->current_variable_location, var_type} });
-	curr_scope->current_variable_location -= var_type.sz;
+	curr_scope->current_variable_location -= var_type.pointers ? 8:var_type.sz;
 }
 
 void VariableRef::generateAssembly(assembly& ass)
@@ -1050,13 +1141,18 @@ void VariableRef::generateAssembly(assembly& ass)
 		sc = sc->parent;
 	}
 	if (sc) {
-		return_type = sc->variables[name].type;
-		if (return_type.lvalue) {
-			ass.add("\tmovq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
+		if (sc->variables[name].location == 1'000'000'000) {
+			ass.add("\tmovq $"+name+", %rax");
 		}
 		else {
-			return_type.lvalue = true;
-			ass.add("\tleaq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
+			return_type = sc->variables[name].type;
+			if (return_type.lvalue) {
+				ass.add("\tmovq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
+			}
+			else {
+				return_type.lvalue = true;
+				ass.add("\tleaq " + std::to_string(sc->variables[name].location) + "(%rbp), %rax");
+			}
 		}
 	}
 	else
@@ -1109,9 +1205,7 @@ void WhileLoop::generateAssembly(assembly& ass) {
 	condition->generateAssembly(ass);
 	if (condition->return_type.lvalue) {
 		size size = condition->return_type.pointers > 0 ? i64 : _size(condition->return_type.sz);
-		ass.add("mov", size, rax, rcx, true, false);
-		ass.add("\tmovl $0, %eax");
-		ass.add("mov", size, rcx, rax, false, false);
+		load(ass, size);
 	}
 	ass.add("\tcmpq $0, %rax");
 	ass.add("\tje _while_end_" + std::to_string(while_cl));
@@ -1132,9 +1226,7 @@ void DoWhileLoop::generateAssembly(assembly& ass) {
 	condition->generateAssembly(ass);
 	if (condition->return_type.lvalue) {
 		size size = condition->return_type.pointers > 0 ? i64 : _size(condition->return_type.sz);
-		ass.add("mov", size, rax, rcx, true, false);
-		ass.add("\tmovl $0, %eax");
-		ass.add("mov", size, rcx, rax, false, false);
+		load(ass, size);
 	}
 	ass.add("\tcmpq $0, %rax");
 	ass.add("\tje _do_while_end_" + std::to_string(do_while_cl));
@@ -1157,9 +1249,7 @@ void ForLoop::generateAssembly(assembly& ass) {
 		condition->generateAssembly(ass);
 		if (condition->return_type.lvalue) {
 			size size = condition->return_type.pointers > 0 ? i64 : _size(condition->return_type.sz);
-			ass.add("mov", size, rax, rcx, true, false);
-			ass.add("\tmovl $0, %eax");
-			ass.add("mov", size, rcx, rax, false, false);
+			load(ass, size);
 		}
 	}
 	else ass.add("\tmovl $1, %eax");
@@ -1204,23 +1294,34 @@ void Continue::generateAssembly(assembly& ass) {
 }
 
 void FunctionCall::generateAssembly(assembly& ass) {
-	if (functions.find({ name }) == functions.end()) return; //function does not exist
-	function f = functions.find({ name })->first;
+	loc->generateAssembly(ass);
+	bool instanceFunction = loc->type == ExpressionType::MemberAccess;
+	if (instanceFunction) ass.add("\tpop %rcx");
 	ass.add("\tsubq $" + std::to_string(std::max(32u, 8 * params.size())) + ", %rsp");
+	ass.add("\tpush %rax");
+	if (instanceFunction) ass.add("\tpush %rcx");
 	for (int i = 0; i < params.size(); i++) {
 		params[i]->generateAssembly(ass);
-		if (params[i]->return_type.lvalue && !f.params[i].second.lvalue) {
+		if (params[i]->return_type.lvalue && params[i]->return_type.id <= 4) {
 			size size = params[i]->return_type.pointers > 0 ? i64 : _size(params[i]->return_type.sz);
-			ass.add("mov", size, rax, rcx, true, false);
-			ass.add("\tmovq $0, %rax");
-			ass.add("mov", size, rcx, rax, false, false);
+			load(ass, size);
 		}
-		ass.add("\tmovq %rax, " + std::to_string(8 * i) + "(%rsp)");
+		ass.add("\tmovq %rax, " + std::to_string(8 * i+8+2*instanceFunction*8) + "(%rsp)");
 	}
-	if (params.size() > 0) ass.add("\tmovq 0(%rsp), %rcx");
-	if (params.size() > 1) ass.add("\tmovq 8(%rsp), %rdx");
-	if (params.size() > 2) ass.add("\tmovq 16(%rsp), %r8");
-	if (params.size() > 3) ass.add("\tmovq 24(%rsp), %r9");
-	ass.add("\tcall " + name);
+	if (instanceFunction) {
+		ass.add("\tpop %rcx");
+		ass.add("\tmovq %rcx, 8(%rsp)");
+		if (params.size() > 0) ass.add("\tmovq 16(%rsp), %rdx");
+		if (params.size() > 1) ass.add("\tmovq 24(%rsp), %r8");
+		if (params.size() > 2) ass.add("\tmovq 32(%rsp), %r9");
+	}
+	else {
+		if (params.size() > 0) ass.add("\tmovq 8(%rsp), %rcx");
+		if (params.size() > 1) ass.add("\tmovq 16(%rsp), %rdx");
+		if (params.size() > 2) ass.add("\tmovq 24(%rsp), %r8");
+		if (params.size() > 3) ass.add("\tmovq 32(%rsp), %r9");
+	}
+	ass.add("\tpop %rax");
+	ass.add("\tcall *%rax");
 	ass.add("\taddq $" + std::to_string(std::max(32u, 8 * params.size())) + ", %rsp");
 }

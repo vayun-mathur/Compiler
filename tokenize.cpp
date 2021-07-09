@@ -21,6 +21,7 @@ token_data token_regex[] = {
     {INT_KEYWORD, R"(int)"},
     {RETURN_KEYWORD, R"(return)"},
     {STRUCT_KEYWORD, R"(struct)"},
+    {VOID_KEYWORD, R"(void)"},
 
     {FOR_KEYWORD, R"(for)"},
     {WHILE_KEYWORD, R"(while)"},
