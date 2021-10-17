@@ -1,37 +1,30 @@
-## Welcome to GitHub Pages
+## The Compiler
 
-You can use the [editor on GitHub](https://github.com/vayun-mathur/Compiler/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
+A basic C++ compiler written in C++. Can it compile itself? No, not quite yet, but soon maybe.
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+## Features
 
-### Markdown
+The main features of the Compiler are:
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
++ Functions
++ For, While, Do While loops
++ Variables, Arrays, and C-Strings
++ Structs with fields and member functions
 
-```markdown
-Syntax highlighted code block
+[How It Works](./algorithm.md)
 
-# Header 1
-## Header 2
-### Header 3
+## Download
 
-- Bulleted
-- List
+#### Latest Release
 
-1. Numbered
-2. List
+| OS      	| Download Link                                                                                                           	| Size  	|
+|---------	|--------------------------------------------------------------------------------------------------------------------	      |-------	|
+| Windows 	| [Compiler v0.1.1 Windows Edition](https://github.com/vayun-mathur/Compiler/releases/download/v1.1.0/compiler-v1.1.0.exe) 	| 211 KB 	|
 
-**Bold** and _Italic_ and `Code` text
+#### System Requirements
 
-[Link](url) and ![Image](src)
-```
+Windows 10 64-bit
 
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
+#### Other Downloads
 
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/vayun-mathur/Compiler/settings/pages). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://support.github.com/contact) and we’ll help you sort it out.
+[Source Code](https://github.com/vayun-mathur/Compiler)
